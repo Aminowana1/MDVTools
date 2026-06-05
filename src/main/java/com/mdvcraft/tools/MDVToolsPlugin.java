@@ -35,6 +35,14 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private Set<Material> miningAllowed = EnumSet.noneOf(Material.class);
     private Set<Material> logsAllowed = EnumSet.noneOf(Material.class);
     private Set<Material> cropsAllowed = EnumSet.noneOf(Material.class);
+    private Set<Material> antiGhostAllowed = EnumSet.noneOf(Material.class);
+
+    private boolean antiGhostEnabled;
+    private boolean antiGhostUpdateNeighbors;
+    private boolean antiGhostUpdateNearbyPlayers;
+    private boolean antiGhostOnlyMdvLore;
+    private int antiGhostPlayerRadius;
+    private List<Integer> antiGhostDelays = new ArrayList<>();
 
     private boolean miningEnabled;
     private boolean woodcuttingEnabled;
@@ -114,7 +122,24 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         logsAllowed = loadMaterials("woodcutting.allowed-blocks");
         cropsAllowed = loadMaterials("farming.allowed-crops");
 
-        debug("Config cargada. Mining=" + miningAllowed.size() + ", Logs=" + logsAllowed.size() + ", Crops=" + cropsAllowed.size());
+        antiGhostEnabled = getConfig().getBoolean("anti-ghost.enabled", true);
+        antiGhostUpdateNeighbors = getConfig().getBoolean("anti-ghost.update-neighbors", true);
+        antiGhostUpdateNearbyPlayers = getConfig().getBoolean("anti-ghost.update-nearby-players", true);
+        antiGhostOnlyMdvLore = getConfig().getBoolean("anti-ghost.only-tools-with-mdv-lore", false);
+        antiGhostPlayerRadius = Math.max(1, getConfig().getInt("anti-ghost.player-radius", 8));
+        antiGhostAllowed = loadMaterials("anti-ghost.allowed-blocks");
+        antiGhostDelays = new ArrayList<>();
+        for (Integer delay : getConfig().getIntegerList("anti-ghost.delays")) {
+            if (delay != null && delay >= 0 && delay <= 40) {
+                antiGhostDelays.add(delay);
+            }
+        }
+        if (antiGhostDelays.isEmpty()) {
+            antiGhostDelays.add(1);
+            antiGhostDelays.add(3);
+        }
+
+        debug("Config cargada. Mining=" + miningAllowed.size() + ", Logs=" + logsAllowed.size() + ", Crops=" + cropsAllowed.size() + ", AntiGhost=" + antiGhostAllowed.size());
     }
 
     private Set<Material> loadMaterials(String path) {
@@ -128,6 +153,26 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             }
         }
         return result;
+    }
+
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onMonitorBreak(BlockBreakEvent event) {
+        if (internalBreakEvent || !antiGhostEnabled) return;
+
+        Player player = event.getPlayer();
+        if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
+
+        ItemStack tool = player.getInventory().getItemInMainHand();
+        if (tool == null || tool.getType() == Material.AIR) return;
+        if (!isPickaxe(tool.getType()) && !isAxe(tool.getType()) && !tool.getType().name().endsWith("_HOE")) return;
+
+        if (antiGhostOnlyMdvLore && !readLore(tool).hasAny()) return;
+
+        Block block = event.getBlock();
+        if (!antiGhostAllowed.isEmpty() && !antiGhostAllowed.contains(block.getType())) return;
+
+        scheduleAntiGhostRefresh(player, block);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -283,6 +328,56 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+
+    private void scheduleAntiGhostRefresh(Player player, Block original) {
+        if (!antiGhostEnabled || original == null || original.getWorld() == null) return;
+
+        World world = original.getWorld();
+        int x = original.getX();
+        int y = original.getY();
+        int z = original.getZ();
+
+        for (int delay : antiGhostDelays) {
+            Bukkit.getScheduler().runTaskLater(this, () -> refreshRealBlocks(player, world, x, y, z), delay);
+        }
+    }
+
+    private void refreshRealBlocks(Player breaker, World world, int x, int y, int z) {
+        if (world == null || breaker == null || !breaker.isOnline()) return;
+
+        List<Block> blocks = new ArrayList<>();
+        Block center = world.getBlockAt(x, y, z);
+        blocks.add(center);
+
+        if (antiGhostUpdateNeighbors) {
+            for (BlockFace face : CONNECTED_FACES) {
+                blocks.add(center.getRelative(face));
+            }
+        }
+
+        if (antiGhostUpdateNearbyPlayers) {
+            double radiusSquared = antiGhostPlayerRadius * antiGhostPlayerRadius;
+            for (Player viewer : world.getPlayers()) {
+                if (viewer.getLocation().distanceSquared(center.getLocation()) <= radiusSquared) {
+                    sendRealBlocks(viewer, blocks);
+                }
+            }
+        } else {
+            sendRealBlocks(breaker, blocks);
+        }
+    }
+
+    private void sendRealBlocks(Player viewer, List<Block> blocks) {
+        if (viewer == null || !viewer.isOnline()) return;
+        for (Block block : blocks) {
+            try {
+                viewer.sendBlockChange(block.getLocation(), block.getBlockData());
+            } catch (Throwable ignored) {
+                // Si una versión futura cambia la API, evitamos romper el evento.
+            }
+        }
+    }
+
     private boolean canBreakExtraBlock(Player player, Block block) {
         BlockBreakEvent extraEvent = new BlockBreakEvent(block, player);
         try {
@@ -296,7 +391,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     private boolean breakExtraNaturally(Player player, Block block, ItemStack tool) {
         if (!canBreakExtraBlock(player, block)) return false;
-        return block.breakNaturally(tool);
+        boolean broken = block.breakNaturally(tool);
+        if (broken) {
+            scheduleAntiGhostRefresh(player, block);
+        }
+        return broken;
     }
 
     private void harvestCrop(Block block, ItemStack tool, boolean autoReplant) {

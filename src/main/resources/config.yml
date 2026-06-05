@@ -1,4 +1,4 @@
-# MDVTools 1.0.0
+# MDVTools 1.0.1
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -11,6 +11,49 @@
 # Ejemplo: Rotura Multiple: 2 = rompe el bloque normal + 2 bloques extra.
 
 debug: false
+
+# Parche anti-bloques fantasma para herramientas muy rápidas.
+# No rompe ni dropea nada: solo reenvía al cliente el estado real del bloque
+# 1 y 3 ticks después de minar, para corregir piedras fantasma irrompibles.
+anti-ghost:
+  enabled: true
+  update-neighbors: true
+  update-nearby-players: true
+  player-radius: 8
+  delays:
+    - 1
+    - 3
+  # Si está en false, funciona con cualquier pico vanilla/MMOItems rápido.
+  # Si está en true, solo funciona si la herramienta tiene lore MDVTools.
+  only-tools-with-mdv-lore: false
+  allowed-blocks:
+    - STONE
+    - DEEPSLATE
+    - COBBLESTONE
+    - COBBLED_DEEPSLATE
+    - GRANITE
+    - DIORITE
+    - ANDESITE
+    - TUFF
+    - CALCITE
+    - DRIPSTONE_BLOCK
+    - COAL_ORE
+    - DEEPSLATE_COAL_ORE
+    - IRON_ORE
+    - DEEPSLATE_IRON_ORE
+    - COPPER_ORE
+    - DEEPSLATE_COPPER_ORE
+    - GOLD_ORE
+    - DEEPSLATE_GOLD_ORE
+    - REDSTONE_ORE
+    - DEEPSLATE_REDSTONE_ORE
+    - LAPIS_ORE
+    - DEEPSLATE_LAPIS_ORE
+    - DIAMOND_ORE
+    - DEEPSLATE_DIAMOND_ORE
+    - EMERALD_ORE
+    - DEEPSLATE_EMERALD_ORE
+
 
 messages:
   prefix: "&6&l[&5&lMDVCRAFT&6&l]  &4»  &r"

@@ -1,0 +1,15 @@
+name: MDVTools
+version: 1.0.0
+main: com.mdvcraft.tools.MDVToolsPlugin
+api-version: '1.21'
+author: MDVCRAFT
+description: Herramientas de profesión para MDVCRAFT.
+commands:
+  mdvtools:
+    description: Comandos administrativos de MDVTools.
+    usage: /mdvtools reload
+    permission: mdvtools.admin
+permissions:
+  mdvtools.admin:
+    description: Permite recargar MDVTools.
+    default: op

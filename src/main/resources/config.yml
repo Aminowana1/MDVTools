@@ -1,0 +1,103 @@
+# MDVTools 1.0.0
+# Plugin de herramientas de profesión para MDVCRAFT.
+#
+# El plugin lee líneas del lore del item:
+# '&3 &7■ &fTala Multiple: 1'
+# '&3 &7■ &fRotura Multiple: 2'
+# '&3 &7■ &fMulti Cosecha: 2'
+# '&3 &7■ &fAuto Replantar'
+#
+# Los números significan bloques/cultivos EXTRA.
+# Ejemplo: Rotura Multiple: 2 = rompe el bloque normal + 2 bloques extra.
+
+debug: false
+
+messages:
+  prefix: "&6&l[&5&lMDVCRAFT&6&l]  &4»  &r"
+  reloaded: "&aMDVTools recargado."
+  no-permission: "&cNo tienes permiso para hacer eso."
+
+lore:
+  # Se detectan también variantes con tilde:
+  # Multiple / Múltiple
+  tala-multiple: "Tala Multiple"
+  rotura-multiple: "Rotura Multiple"
+  multi-cosecha: "Multi Cosecha"
+  auto-replantar: "Auto Replantar"
+
+durability:
+  enabled: true
+  cost-per-extra-block: 1
+  cost-per-extra-crop: 1
+  respect-unbreaking: true
+
+mining:
+  enabled: true
+  max-extra-blocks: 12
+  # LINE = rompe hacia donde mira el jugador, parecido a Bouncing Crack.
+  mode: LINE
+  allowed-blocks:
+    - STONE
+    - DEEPSLATE
+    - COBBLESTONE
+    - COBBLED_DEEPSLATE
+    - GRANITE
+    - DIORITE
+    - ANDESITE
+    - TUFF
+    - CALCITE
+    - DRIPSTONE_BLOCK
+    - COAL_ORE
+    - DEEPSLATE_COAL_ORE
+    - IRON_ORE
+    - DEEPSLATE_IRON_ORE
+    - COPPER_ORE
+    - DEEPSLATE_COPPER_ORE
+    - GOLD_ORE
+    - DEEPSLATE_GOLD_ORE
+    - REDSTONE_ORE
+    - DEEPSLATE_REDSTONE_ORE
+    - LAPIS_ORE
+    - DEEPSLATE_LAPIS_ORE
+    - DIAMOND_ORE
+    - DEEPSLATE_DIAMOND_ORE
+    - EMERALD_ORE
+    - DEEPSLATE_EMERALD_ORE
+
+woodcutting:
+  enabled: true
+  max-extra-blocks: 24
+  # CONNECTED = busca troncos conectados en 6 direcciones.
+  mode: CONNECTED
+  allowed-blocks:
+    - OAK_LOG
+    - SPRUCE_LOG
+    - BIRCH_LOG
+    - JUNGLE_LOG
+    - ACACIA_LOG
+    - DARK_OAK_LOG
+    - MANGROVE_LOG
+    - CHERRY_LOG
+    - PALE_OAK_LOG
+    - STRIPPED_OAK_LOG
+    - STRIPPED_SPRUCE_LOG
+    - STRIPPED_BIRCH_LOG
+    - STRIPPED_JUNGLE_LOG
+    - STRIPPED_ACACIA_LOG
+    - STRIPPED_DARK_OAK_LOG
+    - STRIPPED_MANGROVE_LOG
+    - STRIPPED_CHERRY_LOG
+    - STRIPPED_PALE_OAK_LOG
+
+farming:
+  enabled: true
+  max-extra-crops: 24
+  auto-replant-needs-seed-from-drops: true
+  # Si true, el bloque original también se cosecha manualmente para poder replantarlo.
+  handle-original-crop: true
+  allowed-crops:
+    - WHEAT
+    - CARROTS
+    - POTATOES
+    - BEETROOTS
+    - NETHER_WART

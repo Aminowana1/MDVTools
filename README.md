@@ -49,3 +49,25 @@ anti-ghost:
 ```
 
 Este parche no rompe bloques ni cambia drops. Solo reenvía al cliente el estado real del bloque después de minar.
+
+
+## v1.0.2 - Drops custom separados
+
+Añade `plugins/MDVTools/custom-drops.yml` para drops raros configurables al romper/cosechar bloques.
+
+Ejemplo incluido:
+
+```yml
+drops:
+  brote-dorado-trigo:
+    enabled: true
+    block: WHEAT
+    mature-only: true
+    chance: 0.25
+    amount: 1
+    mmoitems-type: MISCELLANEOUS
+    mmoitems-id: BROTEDORADO
+    drop-naturally: true
+```
+
+`mature-only: true` evita que el drop salga al romper trigo inmaduro.

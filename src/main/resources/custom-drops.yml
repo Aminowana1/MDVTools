@@ -1,0 +1,28 @@
+# MDVTools - Drops custom
+# Archivo separado para premios raros al romper/cosechar bloques.
+# chance usa porcentaje: 0.25 = 0.25% = aprox 1 cada 400.
+# mature-only: true evita drops en cultivos inmaduros.
+# drop-naturally: true intenta dropear el item MMOItems físicamente en el suelo.
+# Si no puede construir el ItemStack de MMOItems, usa default-fallback-command.
+
+enabled: true
+
+default-fallback-command: "mi give %type% %id% %player% %amount%"
+
+drops:
+  brote-dorado-trigo:
+    enabled: true
+    block: WHEAT
+    mature-only: true
+    chance: 0.25
+    amount: 1
+    mmoitems-type: MISCELLANEOUS
+    mmoitems-id: BROTEDORADO
+    drop-naturally: true
+
+    # Opcional: dejar vacío significa todos los mundos.
+    worlds: []
+
+    # Opcional: si true, exige herramienta con lore MDVTools o una línea concreta.
+    require-tool-lore: false
+    required-tool-lore-contains: []

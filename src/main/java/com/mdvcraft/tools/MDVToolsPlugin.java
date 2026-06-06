@@ -4,14 +4,19 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
+import org.bukkit.Location;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.Ageable;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -23,10 +28,14 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 
+import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.text.Normalizer;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.ThreadLocalRandom;
 
 public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
@@ -52,6 +61,12 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private int maxWoodExtra;
     private int maxCropExtra;
 
+    private File customDropsFile;
+    private FileConfiguration customDropsConfig;
+    private boolean customDropsEnabled;
+    private String customDropsFallbackCommand;
+    private final List<CustomDropDefinition> customDrops = new ArrayList<>();
+
     private boolean durabilityEnabled;
     private int durabilityCostBlock;
     private int durabilityCostCrop;
@@ -74,6 +89,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        ensureCustomDropsFile();
         loadSettings();
         Bukkit.getPluginManager().registerEvents(this, this);
         getLogger().info("MDVTools activado.");
@@ -139,7 +155,9 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             antiGhostDelays.add(3);
         }
 
-        debug("Config cargada. Mining=" + miningAllowed.size() + ", Logs=" + logsAllowed.size() + ", Crops=" + cropsAllowed.size() + ", AntiGhost=" + antiGhostAllowed.size());
+        loadCustomDrops();
+
+        debug("Config cargada. Mining=" + miningAllowed.size() + ", Logs=" + logsAllowed.size() + ", Crops=" + cropsAllowed.size() + ", AntiGhost=" + antiGhostAllowed.size() + ", CustomDrops=" + customDrops.size());
     }
 
     private Set<Material> loadMaterials(String path) {
@@ -155,6 +173,120 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         return result;
     }
 
+    private void ensureCustomDropsFile() {
+        customDropsFile = new File(getDataFolder(), "custom-drops.yml");
+        if (!customDropsFile.exists()) {
+            try {
+                saveResource("custom-drops.yml", false);
+            } catch (IllegalArgumentException ignored) {
+                // Si el recurso no existe por alguna razón, se crea desde loadCustomDrops().
+            }
+        }
+    }
+
+    private void loadCustomDrops() {
+        ensureCustomDropsFile();
+        customDrops.clear();
+
+        if (!customDropsFile.exists()) {
+            try {
+                getDataFolder().mkdirs();
+                customDropsFile.createNewFile();
+            } catch (Exception exception) {
+                getLogger().warning("No pude crear custom-drops.yml: " + exception.getMessage());
+            }
+        }
+
+        customDropsConfig = YamlConfiguration.loadConfiguration(customDropsFile);
+        customDropsEnabled = customDropsConfig.getBoolean("enabled", true);
+        customDropsFallbackCommand = customDropsConfig.getString("default-fallback-command", "mi give %type% %id% %player% %amount%");
+
+        ConfigurationSection section = customDropsConfig.getConfigurationSection("drops");
+        if (section == null) return;
+
+        for (String key : section.getKeys(false)) {
+            ConfigurationSection cfg = section.getConfigurationSection(key);
+            if (cfg == null) continue;
+
+            CustomDropDefinition def = new CustomDropDefinition();
+            def.key = key;
+            def.enabled = cfg.getBoolean("enabled", true);
+            def.matureOnly = cfg.getBoolean("mature-only", cfg.getBoolean("only-mature", true));
+            def.chance = Math.max(0.0, cfg.getDouble("chance", 0.0));
+            def.amountMin = Math.max(1, cfg.getInt("amount-min", 1));
+            def.amountMax = Math.max(def.amountMin, cfg.getInt("amount-max", def.amountMin));
+            parseAmount(cfg.get("amount", null), def);
+            def.mmoitemsType = cfg.getString("mmoitems-type", cfg.getString("type", "MATERIAL")).toUpperCase(Locale.ROOT);
+            def.mmoitemsId = cfg.getString("mmoitems-id", cfg.getString("id", "")).toUpperCase(Locale.ROOT);
+            def.dropNaturally = cfg.getBoolean("drop-naturally", true);
+            def.fallbackCommand = cfg.getString("fallback-command", customDropsFallbackCommand);
+            def.requireToolLore = cfg.getBoolean("require-tool-lore", false);
+            def.requiredToolLoreContains = new ArrayList<>();
+            for (String raw : cfg.getStringList("required-tool-lore-contains")) {
+                String normalized = normalize(raw);
+                if (!normalized.isBlank()) def.requiredToolLoreContains.add(normalized);
+            }
+            def.worlds = new HashSet<>(cfg.getStringList("worlds"));
+
+            for (String raw : cfg.getStringList("blocks")) {
+                Material mat = Material.matchMaterial(raw);
+                if (mat != null) def.blocks.add(mat);
+                else getLogger().warning("Material inválido en custom-drops.yml -> " + key + ".blocks: " + raw);
+            }
+            String singleBlock = cfg.getString("block", null);
+            if (singleBlock != null && !singleBlock.isBlank()) {
+                Material mat = Material.matchMaterial(singleBlock);
+                if (mat != null) def.blocks.add(mat);
+                else getLogger().warning("Material inválido en custom-drops.yml -> " + key + ".block: " + singleBlock);
+            }
+
+            if (def.blocks.isEmpty()) {
+                getLogger().warning("Drop custom '" + key + "' no tiene block/blocks válidos.");
+                continue;
+            }
+            if (def.mmoitemsId.isBlank()) {
+                getLogger().warning("Drop custom '" + key + "' no tiene mmoitems-id.");
+                continue;
+            }
+
+            customDrops.add(def);
+        }
+    }
+
+    private void parseAmount(Object raw, CustomDropDefinition def) {
+        if (raw == null) return;
+        String text = raw.toString().trim();
+        if (text.isEmpty()) return;
+
+        try {
+            if (text.contains("-")) {
+                String[] split = text.split("-", 2);
+                int min = Math.max(1, Integer.parseInt(split[0].trim()));
+                int max = Math.max(min, Integer.parseInt(split[1].trim()));
+                def.amountMin = min;
+                def.amountMax = max;
+            } else {
+                int amount = Math.max(1, Integer.parseInt(text));
+                def.amountMin = amount;
+                def.amountMax = amount;
+            }
+        } catch (NumberFormatException ignored) {
+            getLogger().warning("Cantidad inválida en custom-drops.yml -> " + def.key + ".amount: " + text);
+        }
+    }
+
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onMonitorCustomDrops(BlockBreakEvent event) {
+        if (internalBreakEvent || !customDropsEnabled || customDrops.isEmpty()) return;
+
+        Player player = event.getPlayer();
+        if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
+
+        Block block = event.getBlock();
+        ItemStack tool = player.getInventory().getItemInMainHand();
+        rollCustomDrops(player, block, tool);
+    }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onMonitorBreak(BlockBreakEvent event) {
@@ -231,7 +363,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             if (!crop.equals(original) && !canBreakExtraBlock(player, crop)) continue;
             if (!cropsAllowed.contains(crop.getType()) || !isMatureCrop(crop)) continue;
 
-            harvestCrop(crop, tool, lore.autoReplantar);
+            harvestCrop(crop, player, tool, lore.autoReplantar);
             harvested++;
         }
 
@@ -398,10 +530,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         return broken;
     }
 
-    private void harvestCrop(Block block, ItemStack tool, boolean autoReplant) {
+    private void harvestCrop(Block block, Player player, ItemStack tool, boolean autoReplant) {
         Material cropType = block.getType();
         World world = block.getWorld();
         Collection<ItemStack> drops = new ArrayList<>(block.getDrops(tool));
+        rollCustomDrops(player, block, tool);
 
         if (autoReplant) {
             Material seed = seedForCrop(cropType);
@@ -422,6 +555,179 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         dropItems(world, block, drops);
         block.setType(Material.AIR, true);
     }
+
+    private void rollCustomDrops(Player player, Block block, ItemStack tool) {
+        if (!customDropsEnabled || customDrops.isEmpty() || player == null || block == null) return;
+
+        for (CustomDropDefinition def : customDrops) {
+            if (!matchesCustomDrop(def, player, block, tool)) continue;
+            if (ThreadLocalRandom.current().nextDouble(100.0) >= def.chance) continue;
+
+            int amount = def.amountMin;
+            if (def.amountMax > def.amountMin) {
+                amount = ThreadLocalRandom.current().nextInt(def.amountMin, def.amountMax + 1);
+            }
+            dropCustomMmoItem(def, player, block, amount);
+        }
+    }
+
+    private boolean matchesCustomDrop(CustomDropDefinition def, Player player, Block block, ItemStack tool) {
+        if (def == null || !def.enabled) return false;
+        if (!def.blocks.contains(block.getType())) return false;
+        if (!def.worlds.isEmpty() && !def.worlds.contains(block.getWorld().getName())) return false;
+        if (def.matureOnly && !isMatureCrop(block)) return false;
+
+        if (def.requireToolLore) {
+            if (tool == null || tool.getType() == Material.AIR) return false;
+
+            if (def.requiredToolLoreContains.isEmpty()) {
+                if (!readLore(tool).hasAny()) return false;
+            } else {
+                ItemMeta meta = tool.getItemMeta();
+                if (meta == null || !meta.hasLore() || meta.getLore() == null) return false;
+                String joinedLore = normalize(String.join(" ", meta.getLore()));
+                for (String required : def.requiredToolLoreContains) {
+                    if (!joinedLore.contains(required)) return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private void dropCustomMmoItem(CustomDropDefinition def, Player player, Block block, int amount) {
+        amount = Math.max(1, amount);
+
+        if (def.dropNaturally) {
+            ItemStack stack = buildMmoItemStack(def.mmoitemsType, def.mmoitemsId, amount);
+            if (stack != null && stack.getType() != Material.AIR) {
+                Location location = block.getLocation().add(0.5, 0.55, 0.5);
+                Item item = block.getWorld().dropItemNaturally(location, stack);
+                item.setPickupDelay(10);
+                debug("Drop custom: " + def.mmoitemsType + ":" + def.mmoitemsId + " x" + amount + " en " + block.getType());
+                return;
+            }
+        }
+
+        runCustomDropFallback(def, player, block, amount);
+    }
+
+    private void runCustomDropFallback(CustomDropDefinition def, Player player, Block block, int amount) {
+        String command = def.fallbackCommand;
+        if (command == null || command.isBlank()) command = customDropsFallbackCommand;
+        if (command == null || command.isBlank()) return;
+
+        command = command
+                .replace("%player%", player.getName())
+                .replace("%world%", block.getWorld().getName())
+                .replace("%x%", Integer.toString(block.getX()))
+                .replace("%y%", Integer.toString(block.getY()))
+                .replace("%z%", Integer.toString(block.getZ()))
+                .replace("%drop%", def.key)
+                .replace("%type%", def.mmoitemsType)
+                .replace("%id%", def.mmoitemsId)
+                .replace("%amount%", Integer.toString(amount));
+
+        if (command.startsWith("/")) command = command.substring(1);
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
+        debug("Fallback custom-drop usado para " + def.mmoitemsType + ":" + def.mmoitemsId);
+    }
+
+    private ItemStack buildMmoItemStack(String typeId, String itemId, int amount) {
+        try {
+            Class<?> mmoItemsClass = Class.forName("net.Indyuce.mmoitems.MMOItems");
+            Object plugin = getStaticField(mmoItemsClass, "plugin");
+            if (plugin == null) return null;
+
+            Class<?> typeClass = Class.forName("net.Indyuce.mmoitems.api.Type");
+            Object type = getMmoItemsType(typeClass, typeId);
+            if (type == null) {
+                if (debug) getLogger().warning("Tipo MMOItems no encontrado: " + typeId);
+                return null;
+            }
+
+            ItemStack direct = tryInvokeItemStack(plugin, "getItem", type, itemId);
+            if (direct != null) {
+                direct.setAmount(Math.max(1, amount));
+                return direct;
+            }
+
+            Object mmoItem = tryInvokeObject(plugin, "getMMOItem", type, itemId);
+            if (mmoItem != null) {
+                ItemStack built = buildFromMmoItemObject(mmoItem);
+                if (built != null) {
+                    built.setAmount(Math.max(1, amount));
+                    return built;
+                }
+            }
+        } catch (Throwable throwable) {
+            if (debug) getLogger().warning("Error creando item MMOItems " + typeId + ":" + itemId + " -> " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+        }
+        return null;
+    }
+
+    private Object getMmoItemsType(Class<?> typeClass, String typeId) {
+        try {
+            Method get = typeClass.getMethod("get", String.class);
+            return get.invoke(null, typeId);
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            Method valueOf = typeClass.getMethod("valueOf", String.class);
+            return valueOf.invoke(null, typeId.toUpperCase(Locale.ROOT));
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private ItemStack tryInvokeItemStack(Object target, String methodName, Object type, String itemId) {
+        Object result = tryInvokeObject(target, methodName, type, itemId);
+        if (result instanceof ItemStack stack) return stack.clone();
+        return null;
+    }
+
+    private Object tryInvokeObject(Object target, String methodName, Object type, String itemId) {
+        for (Method method : target.getClass().getMethods()) {
+            if (!method.getName().equals(methodName)) continue;
+            if (method.getParameterCount() != 2) continue;
+            try {
+                return method.invoke(target, type, itemId);
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private ItemStack buildFromMmoItemObject(Object mmoItem) {
+        try {
+            Method newBuilder = mmoItem.getClass().getMethod("newBuilder");
+            Object builder = newBuilder.invoke(mmoItem);
+            if (builder == null) return null;
+            Method build = builder.getClass().getMethod("build");
+            Object result = build.invoke(builder);
+            if (result instanceof ItemStack stack) return stack.clone();
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            Method build = mmoItem.getClass().getMethod("build");
+            Object result = build.invoke(mmoItem);
+            if (result instanceof ItemStack stack) return stack.clone();
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private Object getStaticField(Class<?> clazz, String fieldName) {
+        try {
+            Field field = clazz.getField(fieldName);
+            return field.get(null);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
 
     private boolean consumeOne(Collection<ItemStack> drops, Material mat) {
         for (ItemStack drop : drops) {
@@ -589,6 +895,23 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             BlockFace.NORTH, BlockFace.SOUTH,
             BlockFace.EAST, BlockFace.WEST
     };
+
+    private static final class CustomDropDefinition {
+        String key;
+        boolean enabled;
+        boolean matureOnly;
+        double chance;
+        int amountMin;
+        int amountMax;
+        String mmoitemsType;
+        String mmoitemsId;
+        boolean dropNaturally;
+        String fallbackCommand;
+        boolean requireToolLore;
+        List<String> requiredToolLoreContains = new ArrayList<>();
+        Set<String> worlds = new HashSet<>();
+        Set<Material> blocks = EnumSet.noneOf(Material.class);
+    }
 
     private static final class ToolLore {
         int talaMultiple = 0;

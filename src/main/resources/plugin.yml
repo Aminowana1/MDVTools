@@ -1,9 +1,10 @@
 name: MDVTools
-version: 1.0.2
+version: 1.0.3
 main: com.mdvcraft.tools.MDVToolsPlugin
 api-version: '1.21'
 author: MDVCRAFT
 description: Herramientas de profesión para MDVCRAFT.
+softdepend: [MDVHeadOres, MMOItems]
 commands:
   mdvtools:
     description: Comandos administrativos de MDVTools.

@@ -144,3 +144,37 @@ farming:
     - POTATOES
     - BEETROOTS
     - NETHER_WART
+
+# Bonus leídos desde el lore de armaduras/items equipados.
+# Estos bonus están pensados para armaduras de profesión como la Armadura de Obrero.
+# Formato de lore recomendado:
+# '&8Agricultura Drops raros: &a+2%'
+# '&8Minerales Raros: &a+2%'
+# '&8Nodos de arbol extra: &a+2%'
+#
+# Agricultura Drops raros = bonus RELATIVO sobre custom-drops.yml.
+# Ejemplo: chance base 0.25%, bonus +8% => 0.25 * 1.08 = 0.27%.
+# Minerales Raros / Nodos de arbol extra = chance ABSOLUTA de dropear +1 item extra
+# al romper vetas/nodos custom de MDVHeadOres.
+equipment-bonuses:
+  enabled: true
+  max-total-bonus-percent: 100.0
+
+  lore:
+    agriculture-rare-drops: "Agricultura Drops raros"
+    rare-minerals: "Minerales Raros"
+    tree-node-extra: "Nodos de arbol extra"
+
+  agriculture-rare-drops:
+    enabled: true
+
+  rare-minerals:
+    enabled: true
+    extra-amount: 1
+
+  tree-node-extra:
+    enabled: true
+    extra-amount: 1
+
+  mdvheadores:
+    plugin-name: "MDVHeadOres"

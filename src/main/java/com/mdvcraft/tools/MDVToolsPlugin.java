@@ -9,6 +9,8 @@ import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.TileState;
 import org.bukkit.block.data.Ageable;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -25,6 +27,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 
@@ -36,6 +39,9 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.concurrent.ThreadLocalRandom;
+import org.bukkit.NamespacedKey;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 
 public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
@@ -66,6 +72,21 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private boolean customDropsEnabled;
     private String customDropsFallbackCommand;
     private final List<CustomDropDefinition> customDrops = new ArrayList<>();
+
+    private boolean equipmentBonusesEnabled;
+    private boolean agricultureRareBonusEnabled;
+    private boolean headOreExtraBonusEnabled;
+    private boolean treeNodeExtraBonusEnabled;
+    private double maxEquipmentBonusPercent;
+    private int headOreExtraAmount;
+    private int treeNodeExtraAmount;
+    private Pattern agricultureRareBonusPattern;
+    private Pattern rareMineralsBonusPattern;
+    private Pattern treeNodeExtraBonusPattern;
+    private NamespacedKey headOreOreKey;
+    private NamespacedKey headOreNodeKey;
+    private NamespacedKey headOreDropTypeKey;
+    private NamespacedKey headOreDropIdKey;
 
     private boolean durabilityEnabled;
     private int durabilityCostBlock;
@@ -155,9 +176,46 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             antiGhostDelays.add(3);
         }
 
+        loadEquipmentBonusSettings();
         loadCustomDrops();
 
         debug("Config cargada. Mining=" + miningAllowed.size() + ", Logs=" + logsAllowed.size() + ", Crops=" + cropsAllowed.size() + ", AntiGhost=" + antiGhostAllowed.size() + ", CustomDrops=" + customDrops.size());
+    }
+
+    private void loadEquipmentBonusSettings() {
+        equipmentBonusesEnabled = getConfig().getBoolean("equipment-bonuses.enabled", true);
+        agricultureRareBonusEnabled = getConfig().getBoolean("equipment-bonuses.agriculture-rare-drops.enabled", true);
+        headOreExtraBonusEnabled = getConfig().getBoolean("equipment-bonuses.rare-minerals.enabled", true);
+        treeNodeExtraBonusEnabled = getConfig().getBoolean("equipment-bonuses.tree-node-extra.enabled", true);
+        maxEquipmentBonusPercent = Math.max(0.0, getConfig().getDouble("equipment-bonuses.max-total-bonus-percent", 100.0));
+        headOreExtraAmount = Math.max(1, getConfig().getInt("equipment-bonuses.rare-minerals.extra-amount", 1));
+        treeNodeExtraAmount = Math.max(1, getConfig().getInt("equipment-bonuses.tree-node-extra.extra-amount", 1));
+
+        agricultureRareBonusPattern = buildPercentLorePattern(getConfig().getString("equipment-bonuses.lore.agriculture-rare-drops", "Agricultura Drops raros"));
+        rareMineralsBonusPattern = buildPercentLorePattern(getConfig().getString("equipment-bonuses.lore.rare-minerals", "Minerales Raros"));
+        treeNodeExtraBonusPattern = buildPercentLorePattern(getConfig().getString("equipment-bonuses.lore.tree-node-extra", "Nodos de arbol extra"));
+
+        headOreOreKey = null;
+        headOreNodeKey = null;
+        headOreDropTypeKey = null;
+        headOreDropIdKey = null;
+
+        String pluginName = getConfig().getString("equipment-bonuses.mdvheadores.plugin-name", "MDVHeadOres");
+        Plugin headOres = pluginName == null ? null : Bukkit.getPluginManager().getPlugin(pluginName);
+        if (headOres != null) {
+            headOreOreKey = new NamespacedKey(headOres, "ore_key");
+            headOreNodeKey = new NamespacedKey(headOres, "tree_node_key");
+            headOreDropTypeKey = new NamespacedKey(headOres, "drop_type");
+            headOreDropIdKey = new NamespacedKey(headOres, "drop_id");
+        } else if (debug && (headOreExtraBonusEnabled || treeNodeExtraBonusEnabled)) {
+            getLogger().info("MDVHeadOres no está cargado todavía. Los bonus de Minerales Raros/Nodos se intentarán al romper bloques si el plugin está disponible.");
+        }
+    }
+
+    private Pattern buildPercentLorePattern(String label) {
+        String normalizedLabel = normalize(label);
+        if (normalizedLabel.isBlank()) normalizedLabel = "Drops raros";
+        return Pattern.compile(Pattern.quote(normalizedLabel) + "\\s*:\\s*\\+?([0-9]+(?:[\\.,][0-9]+)?)\\s*%?", Pattern.CASE_INSENSITIVE);
     }
 
     private Set<Material> loadMaterials(String path) {
@@ -286,6 +344,46 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         Block block = event.getBlock();
         ItemStack tool = player.getInventory().getItemInMainHand();
         rollCustomDrops(player, block, tool);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onMonitorHeadOreExtraDrops(BlockBreakEvent event) {
+        if (internalBreakEvent || !equipmentBonusesEnabled) return;
+        if (!headOreExtraBonusEnabled && !treeNodeExtraBonusEnabled) return;
+
+        Player player = event.getPlayer();
+        if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
+
+        Block block = event.getBlock();
+        Material type = block.getType();
+        if (type != Material.PLAYER_HEAD && type != Material.PLAYER_WALL_HEAD) return;
+
+        ensureHeadOreKeys();
+        if (headOreOreKey == null || headOreNodeKey == null || headOreDropTypeKey == null || headOreDropIdKey == null) return;
+
+        BlockState state = block.getState();
+        if (!(state instanceof TileState tileState)) return;
+
+        PersistentDataContainer pdc = tileState.getPersistentDataContainer();
+        String oreName = pdc.get(headOreOreKey, PersistentDataType.STRING);
+        String nodeName = pdc.get(headOreNodeKey, PersistentDataType.STRING);
+        if (oreName == null && nodeName == null) return;
+
+        String dropType = pdc.get(headOreDropTypeKey, PersistentDataType.STRING);
+        String dropId = pdc.get(headOreDropIdKey, PersistentDataType.STRING);
+        if (dropType == null || dropType.isBlank() || dropId == null || dropId.isBlank()) return;
+
+        EquipmentBonuses bonuses = readEquipmentBonuses(player);
+        boolean isNode = nodeName != null;
+        double chance = isNode ? bonuses.treeNodeExtra : bonuses.rareMinerals;
+        if (isNode && !treeNodeExtraBonusEnabled) return;
+        if (!isNode && !headOreExtraBonusEnabled) return;
+        if (chance <= 0.0) return;
+
+        if (ThreadLocalRandom.current().nextDouble(100.0) >= chance) return;
+
+        int amount = isNode ? treeNodeExtraAmount : headOreExtraAmount;
+        dropExtraMmoItem(dropType, dropId, player, block, amount, isNode ? "nodo" : "mineral");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -559,9 +657,17 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private void rollCustomDrops(Player player, Block block, ItemStack tool) {
         if (!customDropsEnabled || customDrops.isEmpty() || player == null || block == null) return;
 
+        EquipmentBonuses bonuses = equipmentBonusesEnabled && agricultureRareBonusEnabled ? readEquipmentBonuses(player) : EquipmentBonuses.EMPTY;
+
         for (CustomDropDefinition def : customDrops) {
             if (!matchesCustomDrop(def, player, block, tool)) continue;
-            if (ThreadLocalRandom.current().nextDouble(100.0) >= def.chance) continue;
+
+            double effectiveChance = def.chance;
+            if (agricultureRareBonusEnabled && isAgricultureCustomDrop(block)) {
+                effectiveChance = applyRelativeBonus(effectiveChance, bonuses.agricultureRareDrops);
+            }
+
+            if (ThreadLocalRandom.current().nextDouble(100.0) >= effectiveChance) continue;
 
             int amount = def.amountMin;
             if (def.amountMax > def.amountMin) {
@@ -593,6 +699,57 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
 
         return true;
+    }
+
+    private boolean isAgricultureCustomDrop(Block block) {
+        if (block == null) return false;
+        if (cropsAllowed.contains(block.getType())) return true;
+        return block.getBlockData() instanceof Ageable;
+    }
+
+    private double applyRelativeBonus(double baseChance, double bonusPercent) {
+        if (baseChance <= 0.0 || bonusPercent <= 0.0) return baseChance;
+        double result = baseChance * (1.0 + (bonusPercent / 100.0));
+        return Math.max(0.0, Math.min(100.0, result));
+    }
+
+    private void ensureHeadOreKeys() {
+        if (headOreOreKey != null && headOreNodeKey != null && headOreDropTypeKey != null && headOreDropIdKey != null) return;
+        String pluginName = getConfig().getString("equipment-bonuses.mdvheadores.plugin-name", "MDVHeadOres");
+        Plugin headOres = pluginName == null ? null : Bukkit.getPluginManager().getPlugin(pluginName);
+        if (headOres == null) return;
+        headOreOreKey = new NamespacedKey(headOres, "ore_key");
+        headOreNodeKey = new NamespacedKey(headOres, "tree_node_key");
+        headOreDropTypeKey = new NamespacedKey(headOres, "drop_type");
+        headOreDropIdKey = new NamespacedKey(headOres, "drop_id");
+    }
+
+    private void dropExtraMmoItem(String typeId, String itemId, Player player, Block block, int amount, String reason) {
+        amount = Math.max(1, amount);
+        ItemStack stack = buildMmoItemStack(typeId, itemId, amount);
+        if (stack != null && stack.getType() != Material.AIR) {
+            Location location = block.getLocation().add(0.5, 0.55, 0.5);
+            Item item = block.getWorld().dropItemNaturally(location, stack);
+            item.setPickupDelay(10);
+            debug("Drop extra por lore (" + reason + "): " + typeId + ":" + itemId + " x" + amount);
+            return;
+        }
+
+        String command = customDropsFallbackCommand;
+        if (command == null || command.isBlank()) command = "mi give %type% %id% %player% %amount%";
+        command = command
+                .replace("%player%", player.getName())
+                .replace("%world%", block.getWorld().getName())
+                .replace("%x%", Integer.toString(block.getX()))
+                .replace("%y%", Integer.toString(block.getY()))
+                .replace("%z%", Integer.toString(block.getZ()))
+                .replace("%drop%", reason)
+                .replace("%type%", typeId)
+                .replace("%id%", itemId)
+                .replace("%amount%", Integer.toString(amount));
+        if (command.startsWith("/")) command = command.substring(1);
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
+        debug("Fallback drop extra por lore usado para " + typeId + ":" + itemId);
     }
 
     private void dropCustomMmoItem(CustomDropDefinition def, Player player, Block block, int amount) {
@@ -818,6 +975,50 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         return result;
     }
 
+    private EquipmentBonuses readEquipmentBonuses(Player player) {
+        if (player == null || !equipmentBonusesEnabled) return EquipmentBonuses.EMPTY;
+
+        EquipmentBonuses result = new EquipmentBonuses();
+        ItemStack[] armor = player.getInventory().getArmorContents();
+        if (armor == null) return result;
+
+        for (ItemStack piece : armor) {
+            readEquipmentBonusLore(piece, result);
+        }
+
+        result.cap(maxEquipmentBonusPercent);
+        return result;
+    }
+
+    private void readEquipmentBonusLore(ItemStack item, EquipmentBonuses result) {
+        if (item == null || item.getType() == Material.AIR || result == null) return;
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null || !meta.hasLore() || meta.getLore() == null) return;
+
+        for (String line : meta.getLore()) {
+            String clean = normalize(ChatColor.stripColor(line));
+            result.agricultureRareDrops += matchPercent(agricultureRareBonusPattern, clean);
+            result.rareMinerals += matchPercent(rareMineralsBonusPattern, clean);
+            result.treeNodeExtra += matchPercent(treeNodeExtraBonusPattern, clean);
+        }
+    }
+
+    private double matchPercent(Pattern pattern, String cleanLine) {
+        if (pattern == null || cleanLine == null || cleanLine.isBlank()) return 0.0;
+        Matcher matcher = pattern.matcher(cleanLine);
+        if (!matcher.find()) return 0.0;
+        return Math.max(0.0, parseDoubleSafe(matcher.group(1)));
+    }
+
+    private double parseDoubleSafe(String raw) {
+        if (raw == null) return 0.0;
+        try {
+            return Double.parseDouble(raw.replace(',', '.'));
+        } catch (NumberFormatException ignored) {
+            return 0.0;
+        }
+    }
+
     private int parseIntSafe(String raw) {
         try {
             return Integer.parseInt(raw);
@@ -911,6 +1112,26 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         List<String> requiredToolLoreContains = new ArrayList<>();
         Set<String> worlds = new HashSet<>();
         Set<Material> blocks = EnumSet.noneOf(Material.class);
+    }
+
+    private static final class EquipmentBonuses {
+        static final EquipmentBonuses EMPTY = new EquipmentBonuses();
+
+        double agricultureRareDrops = 0.0;
+        double rareMinerals = 0.0;
+        double treeNodeExtra = 0.0;
+
+        void cap(double max) {
+            if (max <= 0.0) {
+                agricultureRareDrops = 0.0;
+                rareMinerals = 0.0;
+                treeNodeExtra = 0.0;
+                return;
+            }
+            agricultureRareDrops = Math.min(agricultureRareDrops, max);
+            rareMinerals = Math.min(rareMinerals, max);
+            treeNodeExtra = Math.min(treeNodeExtra, max);
+        }
     }
 
     private static final class ToolLore {

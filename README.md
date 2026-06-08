@@ -1,73 +1,74 @@
-# MDVTools
+# MDVTools 1.0.3
 
-Plugin para MDVCRAFT que añade herramientas de profesión leyendo el lore de items de MMOItems.
+Herramientas de profesión para MDVCRAFT.
 
-## Lore soportado
+## Cambios 1.0.3
 
-```yaml
-- '&3 &7■ &fTala Multiple: 1'
-- '&3 &7■ &fRotura Multiple: 2'
-- '&3 &7■ &fMulti Cosecha: 2'
-- '&3 &7■ &fAuto Replantar'
-```
-
-Los números indican bloques/cultivos extra.
-
-Ejemplo: `Rotura Multiple: 2` rompe el bloque normal + 2 bloques extra.
-
-## Comando
-
-```txt
-/mdvtools reload
-```
-
-## Compilar con GitHub Actions
-
-1. Subir el contenido a un repositorio GitHub.
-2. Ir a Actions.
-3. Ejecutar `Build MDVTools`.
-4. Descargar el artifact `MDVTools-jar`.
-5. Subir el `.jar` a `/plugins/`.
-
-
-## MDVTools 1.0.1
-
-Añade parche anti-bloques fantasma para minado ultrarrápido.
-
-Config principal:
-
-```yaml
-anti-ghost:
-  enabled: true
-  update-neighbors: true
-  update-nearby-players: true
-  player-radius: 8
-  delays:
-    - 1
-    - 3
-  only-tools-with-mdv-lore: false
-```
-
-Este parche no rompe bloques ni cambia drops. Solo reenvía al cliente el estado real del bloque después de minar.
-
-
-## v1.0.2 - Drops custom separados
-
-Añade `plugins/MDVTools/custom-drops.yml` para drops raros configurables al romper/cosechar bloques.
-
-Ejemplo incluido:
+Agrega bonus leídos desde lore de armaduras/items equipados:
 
 ```yml
-drops:
-  brote-dorado-trigo:
-    enabled: true
-    block: WHEAT
-    mature-only: true
-    chance: 0.25
-    amount: 1
-    mmoitems-type: MISCELLANEOUS
-    mmoitems-id: BROTEDORADO
-    drop-naturally: true
+- '&8Agricultura Drops raros: &a+2%'
+- '&8Minerales Raros: &a+2%'
+- '&8Nodos de arbol extra: &a+2%'
 ```
 
-`mature-only: true` evita que el drop salga al romper trigo inmaduro.
+### Agricultura Drops raros
+
+Afecta los drops de `custom-drops.yml` en cultivos. Es un bonus relativo.
+
+Ejemplo:
+
+- Chance base: `0.25%`
+- Bonus total equipado: `+8%`
+- Chance final: `0.25 * 1.08 = 0.27%`
+
+### Minerales Raros
+
+Afecta vetas custom de MDVHeadOres. Es chance absoluta de dropear `+1` item extra del mismo mineral custom.
+
+Ejemplo: `Minerales Raros: +10%` = 10% de obtener 1 mineral extra al romper una veta custom.
+
+### Nodos de arbol extra
+
+Afecta nodos custom de árbol de MDVHeadOres. Es chance absoluta de dropear `+1` item extra del mismo nodo.
+
+Ejemplo: `Nodos de arbol extra: +10%` = 10% de obtener 1 drop extra al romper un nodo custom.
+
+## Config nueva
+
+Si ya tenías `config.yml`, agrega manualmente:
+
+```yml
+equipment-bonuses:
+  enabled: true
+  max-total-bonus-percent: 100.0
+
+  lore:
+    agriculture-rare-drops: "Agricultura Drops raros"
+    rare-minerals: "Minerales Raros"
+    tree-node-extra: "Nodos de arbol extra"
+
+  agriculture-rare-drops:
+    enabled: true
+
+  rare-minerals:
+    enabled: true
+    extra-amount: 1
+
+  tree-node-extra:
+    enabled: true
+    extra-amount: 1
+
+  mdvheadores:
+    plugin-name: "MDVHeadOres"
+```
+
+## Compilación
+
+Proyecto Maven para Java 21 / Paper API 1.21.6.
+
+```bash
+mvn clean package
+```
+
+El `.jar` queda en `target/MDVTools-1.0.3.jar`.

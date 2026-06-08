@@ -1,4 +1,4 @@
-# MDVTools 1.0.2
+# MDVTools 1.0.4
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -178,3 +178,46 @@ equipment-bonuses:
 
   mdvheadores:
     plugin-name: "MDVHeadOres"
+
+
+# Pasiva para ballestas: recarga automática al impactar.
+# Lee líneas del lore del item. Recomendado:
+# '&6&lPasiva: &eRecarga Automática al Impacto'
+#
+# Funcionamiento:
+# 1) El jugador dispara una ballesta con el lore configurado.
+# 2) Si el proyectil golpea una entidad, MDVTools recarga la ballesta.
+# 3) Consume 1 flecha al recargar, para evitar munición infinita.
+crossbow-auto-reload:
+  enabled: true
+
+  lore-lines:
+    - "Recarga Automatica al Impacto"
+    - "Recarga Automática al Impacto"
+
+  # true = solo recarga si la flecha/virote golpea una entidad.
+  # false = también recarga si golpea bloques.
+  only-on-entity-hit: true
+
+  # Consume 1 flecha al recargar automáticamente.
+  consume-arrow: true
+  ammo-material: ARROW
+
+  # Pequeño cooldown interno anti-abuso, en milisegundos.
+  cooldown-ms: 150
+
+  # Tiempo máximo para recordar un proyectil marcado antes de limpiarlo.
+  projectile-ttl-ticks: 400
+
+  require-player-online: true
+
+  sound:
+    enabled: true
+    value: "item.crossbow.loading_end"
+    volume: 0.8
+    pitch: 1.3
+
+  particles:
+    enabled: true
+    particle: "CRIT"
+    amount: 8

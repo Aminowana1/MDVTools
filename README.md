@@ -1,6 +1,54 @@
-# MDVTools 1.0.3
+# MDVTools 1.0.4
 
 Herramientas de profesión para MDVCRAFT.
+
+## Cambios 1.0.4
+
+Agrega pasiva configurable para ballestas con lore:
+
+```yml
+- '&6&lPasiva: &eRecarga Automática al Impacto'
+```
+
+Funcionamiento:
+
+1. El jugador dispara una ballesta con el lore configurado.
+2. MDVTools marca el proyectil disparado.
+3. Si el proyectil golpea una entidad, intenta recargar automáticamente la ballesta que el jugador tenga en mano principal o secundaria.
+4. Consume 1 flecha al recargar para evitar munición infinita.
+
+El sistema es por eventos (`EntityShootBowEvent` y `ProjectileHitEvent`), sin loops por tick ni escaneo permanente de jugadores.
+
+## Config nueva 1.0.4
+
+Si ya tenías `config.yml`, agrega manualmente:
+
+```yml
+crossbow-auto-reload:
+  enabled: true
+
+  lore-lines:
+    - "Recarga Automatica al Impacto"
+    - "Recarga Automática al Impacto"
+
+  only-on-entity-hit: true
+  consume-arrow: true
+  ammo-material: ARROW
+  cooldown-ms: 150
+  projectile-ttl-ticks: 400
+  require-player-online: true
+
+  sound:
+    enabled: true
+    value: "item.crossbow.loading_end"
+    volume: 0.8
+    pitch: 1.3
+
+  particles:
+    enabled: true
+    particle: "CRIT"
+    amount: 8
+```
 
 ## Cambios 1.0.3
 
@@ -34,35 +82,6 @@ Afecta nodos custom de árbol de MDVHeadOres. Es chance absoluta de dropear `+1`
 
 Ejemplo: `Nodos de arbol extra: +10%` = 10% de obtener 1 drop extra al romper un nodo custom.
 
-## Config nueva
-
-Si ya tenías `config.yml`, agrega manualmente:
-
-```yml
-equipment-bonuses:
-  enabled: true
-  max-total-bonus-percent: 100.0
-
-  lore:
-    agriculture-rare-drops: "Agricultura Drops raros"
-    rare-minerals: "Minerales Raros"
-    tree-node-extra: "Nodos de arbol extra"
-
-  agriculture-rare-drops:
-    enabled: true
-
-  rare-minerals:
-    enabled: true
-    extra-amount: 1
-
-  tree-node-extra:
-    enabled: true
-    extra-amount: 1
-
-  mdvheadores:
-    plugin-name: "MDVHeadOres"
-```
-
 ## Compilación
 
 Proyecto Maven para Java 21 / Paper API 1.21.6.
@@ -71,4 +90,4 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.3.jar`.
+El `.jar` queda en `target/MDVTools-1.0.4.jar`.

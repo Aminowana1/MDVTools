@@ -20,13 +20,18 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.entity.EntityShootBowEvent;
+import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.CrossbowMeta;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
@@ -87,6 +92,24 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private NamespacedKey headOreNodeKey;
     private NamespacedKey headOreDropTypeKey;
     private NamespacedKey headOreDropIdKey;
+
+    private boolean crossbowAutoReloadEnabled;
+    private boolean crossbowOnlyOnEntityHit;
+    private boolean crossbowConsumeArrow;
+    private boolean crossbowRequirePlayerOnline;
+    private long crossbowCooldownMs;
+    private long crossbowProjectileTtlTicks;
+    private Material crossbowAmmoMaterial;
+    private List<String> crossbowLoreKeys = new ArrayList<>();
+    private String crossbowSoundName;
+    private float crossbowSoundVolume;
+    private float crossbowSoundPitch;
+    private boolean crossbowSoundEnabled;
+    private boolean crossbowParticlesEnabled;
+    private String crossbowParticleName;
+    private int crossbowParticleAmount;
+    private final Map<UUID, AutoReloadShot> autoReloadProjectiles = new HashMap<>();
+    private final Map<UUID, Long> autoReloadCooldowns = new HashMap<>();
 
     private boolean durabilityEnabled;
     private int durabilityCostBlock;
@@ -177,6 +200,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
 
         loadEquipmentBonusSettings();
+        loadCrossbowAutoReloadSettings();
         loadCustomDrops();
 
         debug("Config cargada. Mining=" + miningAllowed.size() + ", Logs=" + logsAllowed.size() + ", Crops=" + cropsAllowed.size() + ", AntiGhost=" + antiGhostAllowed.size() + ", CustomDrops=" + customDrops.size());
@@ -209,6 +233,43 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             headOreDropIdKey = new NamespacedKey(headOres, "drop_id");
         } else if (debug && (headOreExtraBonusEnabled || treeNodeExtraBonusEnabled)) {
             getLogger().info("MDVHeadOres no está cargado todavía. Los bonus de Minerales Raros/Nodos se intentarán al romper bloques si el plugin está disponible.");
+        }
+    }
+
+
+    private void loadCrossbowAutoReloadSettings() {
+        crossbowAutoReloadEnabled = getConfig().getBoolean("crossbow-auto-reload.enabled", true);
+        crossbowOnlyOnEntityHit = getConfig().getBoolean("crossbow-auto-reload.only-on-entity-hit", true);
+        crossbowConsumeArrow = getConfig().getBoolean("crossbow-auto-reload.consume-arrow", true);
+        crossbowRequirePlayerOnline = getConfig().getBoolean("crossbow-auto-reload.require-player-online", true);
+        crossbowCooldownMs = Math.max(0L, getConfig().getLong("crossbow-auto-reload.cooldown-ms", 150L));
+        crossbowProjectileTtlTicks = Math.max(20L, getConfig().getLong("crossbow-auto-reload.projectile-ttl-ticks", 400L));
+
+        Material ammo = Material.matchMaterial(getConfig().getString("crossbow-auto-reload.ammo-material", "ARROW"));
+        crossbowAmmoMaterial = ammo == null ? Material.ARROW : ammo;
+
+        crossbowLoreKeys = new ArrayList<>();
+        for (String raw : getConfig().getStringList("crossbow-auto-reload.lore-lines")) {
+            String normalized = normalize(raw);
+            if (!normalized.isBlank()) crossbowLoreKeys.add(normalized.toLowerCase(Locale.ROOT));
+        }
+        if (crossbowLoreKeys.isEmpty()) {
+            crossbowLoreKeys.add(normalize("Recarga Automatica al Impacto").toLowerCase(Locale.ROOT));
+            crossbowLoreKeys.add(normalize("Recarga Automática al Impacto").toLowerCase(Locale.ROOT));
+        }
+
+        crossbowSoundEnabled = getConfig().getBoolean("crossbow-auto-reload.sound.enabled", true);
+        crossbowSoundName = getConfig().getString("crossbow-auto-reload.sound.value", "item.crossbow.loading_end");
+        crossbowSoundVolume = (float) getConfig().getDouble("crossbow-auto-reload.sound.volume", 0.8);
+        crossbowSoundPitch = (float) getConfig().getDouble("crossbow-auto-reload.sound.pitch", 1.3);
+
+        crossbowParticlesEnabled = getConfig().getBoolean("crossbow-auto-reload.particles.enabled", true);
+        crossbowParticleName = getConfig().getString("crossbow-auto-reload.particles.particle", "CRIT");
+        crossbowParticleAmount = Math.max(0, getConfig().getInt("crossbow-auto-reload.particles.amount", 8));
+
+        if (!crossbowAutoReloadEnabled) {
+            autoReloadProjectiles.clear();
+            autoReloadCooldowns.clear();
         }
     }
 
@@ -333,6 +394,65 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onAutoReloadShoot(EntityShootBowEvent event) {
+        if (!crossbowAutoReloadEnabled) return;
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (!(event.getProjectile() instanceof Projectile projectile)) return;
+
+        ItemStack bow = event.getBow();
+        if (!isAutoReloadCrossbow(bow)) return;
+
+        UUID projectileId = projectile.getUniqueId();
+        autoReloadProjectiles.put(projectileId, new AutoReloadShot(player.getUniqueId(), System.currentTimeMillis()));
+        Bukkit.getScheduler().runTaskLater(this, () -> autoReloadProjectiles.remove(projectileId), crossbowProjectileTtlTicks);
+        debug("Proyectil marcado para recarga automática: " + projectileId + " jugador=" + player.getName());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onAutoReloadProjectileHit(ProjectileHitEvent event) {
+        if (!crossbowAutoReloadEnabled) return;
+        if (crossbowOnlyOnEntityHit && event.getHitEntity() == null) return;
+        if (!(event.getEntity() instanceof Projectile projectile)) return;
+
+        AutoReloadShot shot = autoReloadProjectiles.remove(projectile.getUniqueId());
+        if (shot == null) return;
+
+        Player player = Bukkit.getPlayer(shot.playerId);
+        if (player == null || !player.isOnline()) {
+            if (crossbowRequirePlayerOnline) return;
+        }
+        if (player == null) return;
+
+        if (crossbowCooldownMs > 0) {
+            long now = System.currentTimeMillis();
+            long last = autoReloadCooldowns.getOrDefault(player.getUniqueId(), 0L);
+            if (now - last < crossbowCooldownMs) return;
+            autoReloadCooldowns.put(player.getUniqueId(), now);
+        }
+
+        ItemStack crossbow = findHeldAutoReloadCrossbow(player);
+        if (crossbow == null) {
+            debug("No se encontró ballesta válida en mano para recargar: " + player.getName());
+            return;
+        }
+
+        if (crossbowConsumeArrow && !consumeOne(player.getInventory(), crossbowAmmoMaterial)) {
+            debug("Sin munición para recarga automática: " + player.getName());
+            return;
+        }
+
+        if (!chargeCrossbow(crossbow, crossbowAmmoMaterial)) {
+            debug("No pude cargar la ballesta de " + player.getName());
+            return;
+        }
+
+        playAutoReloadFeedback(player);
+        player.updateInventory();
+        debug("Ballesta recargada automáticamente para " + player.getName());
+    }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onMonitorCustomDrops(BlockBreakEvent event) {
@@ -886,6 +1006,84 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
 
+
+    private boolean isAutoReloadCrossbow(ItemStack item) {
+        if (item == null || item.getType() != Material.CROSSBOW) return false;
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null || !meta.hasLore() || meta.getLore() == null) return false;
+
+        for (String line : meta.getLore()) {
+            String clean = normalize(line).toLowerCase(Locale.ROOT);
+            for (String required : crossbowLoreKeys) {
+                if (clean.contains(required)) return true;
+            }
+        }
+        return false;
+    }
+
+    private ItemStack findHeldAutoReloadCrossbow(Player player) {
+        if (player == null) return null;
+        PlayerInventory inventory = player.getInventory();
+        ItemStack main = inventory.getItemInMainHand();
+        if (isAutoReloadCrossbow(main)) return main;
+        ItemStack off = inventory.getItemInOffHand();
+        if (isAutoReloadCrossbow(off)) return off;
+        return null;
+    }
+
+    private boolean chargeCrossbow(ItemStack crossbow, Material ammoMaterial) {
+        if (crossbow == null || crossbow.getType() != Material.CROSSBOW) return false;
+        ItemMeta meta = crossbow.getItemMeta();
+        if (!(meta instanceof CrossbowMeta crossbowMeta)) return false;
+
+        try {
+            crossbowMeta.setChargedProjectiles(new ArrayList<>());
+            crossbowMeta.addChargedProjectile(new ItemStack(ammoMaterial, 1));
+            crossbow.setItemMeta(crossbowMeta);
+            return true;
+        } catch (Throwable throwable) {
+            if (debug) getLogger().warning("Error recargando ballesta: " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+            return false;
+        }
+    }
+
+    private boolean consumeOne(PlayerInventory inventory, Material material) {
+        if (inventory == null || material == null || material == Material.AIR) return false;
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item == null || item.getType() != material || item.getAmount() <= 0) continue;
+            item.setAmount(item.getAmount() - 1);
+            if (item.getAmount() <= 0) inventory.setItem(slot, null);
+            return true;
+        }
+        return false;
+    }
+
+    private void playAutoReloadFeedback(Player player) {
+        if (player == null || !player.isOnline()) return;
+        if (crossbowSoundEnabled && crossbowSoundName != null && !crossbowSoundName.isBlank()) {
+            try {
+                player.playSound(player.getLocation(), crossbowSoundName, crossbowSoundVolume, crossbowSoundPitch);
+            } catch (Throwable ignored) {
+                try {
+                    Sound sound = Sound.valueOf(crossbowSoundName.toUpperCase(Locale.ROOT).replace('.', '_'));
+                    player.playSound(player.getLocation(), sound, crossbowSoundVolume, crossbowSoundPitch);
+                } catch (Throwable ignoredAgain) {
+                    if (debug) getLogger().warning("Sonido inválido para crossbow-auto-reload: " + crossbowSoundName);
+                }
+            }
+        }
+
+        if (crossbowParticlesEnabled && crossbowParticleAmount > 0 && crossbowParticleName != null && !crossbowParticleName.isBlank()) {
+            try {
+                org.bukkit.Particle particle = org.bukkit.Particle.valueOf(crossbowParticleName.toUpperCase(Locale.ROOT));
+                player.getWorld().spawnParticle(particle, player.getLocation().add(0, 1.1, 0), crossbowParticleAmount, 0.25, 0.25, 0.25, 0.02);
+            } catch (Throwable ignored) {
+                if (debug) getLogger().warning("Partícula inválida para crossbow-auto-reload: " + crossbowParticleName);
+            }
+        }
+    }
+
     private boolean consumeOne(Collection<ItemStack> drops, Material mat) {
         for (ItemStack drop : drops) {
             if (drop != null && drop.getType() == mat && drop.getAmount() > 0) {
@@ -1096,6 +1294,17 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             BlockFace.NORTH, BlockFace.SOUTH,
             BlockFace.EAST, BlockFace.WEST
     };
+
+
+    private static final class AutoReloadShot {
+        final UUID playerId;
+        final long createdAtMs;
+
+        AutoReloadShot(UUID playerId, long createdAtMs) {
+            this.playerId = playerId;
+            this.createdAtMs = createdAtMs;
+        }
+    }
 
     private static final class CustomDropDefinition {
         String key;

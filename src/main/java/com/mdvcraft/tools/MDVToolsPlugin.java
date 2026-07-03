@@ -6,6 +6,7 @@ import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.Location;
 import org.bukkit.Sound;
+import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -26,7 +27,13 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
@@ -111,6 +118,33 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, AutoReloadShot> autoReloadProjectiles = new HashMap<>();
     private final Map<UUID, Long> autoReloadCooldowns = new HashMap<>();
 
+    private boolean weaponSwapLockEnabled;
+    private long weaponSwapLockDurationMs;
+    private boolean weaponSwapLockOnlyWhenNewItemIsWeapon;
+    private Set<String> weaponSwapLockMmoTypes = new HashSet<>();
+    private boolean weaponSwapLockFallbackEnabled;
+    private Set<Material> weaponSwapLockFallbackMaterials = EnumSet.noneOf(Material.class);
+    private boolean weaponSwapLockBlockInteract;
+    private boolean weaponSwapLockBlockMeleeHit;
+    private boolean weaponSwapLockBlockBowShoot;
+    private String weaponSwapLockBlockedMessage;
+    private long weaponSwapLockBlockedMessageCooldownMs;
+    private boolean weaponSwapLockReadyFeedbackEnabled;
+    private String weaponSwapLockReadySoundName;
+    private float weaponSwapLockReadySoundVolume;
+    private float weaponSwapLockReadySoundPitch;
+    private boolean weaponSwapLockReadyParticlesEnabled;
+    private String weaponSwapLockReadyParticleName;
+    private int weaponSwapLockReadyParticleAmount;
+    private final Map<UUID, Long> weaponSwapLockUntil = new HashMap<>();
+    private final Map<UUID, Long> weaponSwapLockLastBlockedMessage = new HashMap<>();
+
+    private boolean mmoNbtReflectionTried;
+    private Class<?> mmoNbtItemClass;
+    private Method mmoNbtGetMethod;
+    private Method mmoNbtHasTypeMethod;
+    private Method mmoNbtGetTypeMethod;
+
     private boolean durabilityEnabled;
     private int durabilityCostBlock;
     private int durabilityCostCrop;
@@ -141,6 +175,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        weaponSwapLockUntil.clear();
+        weaponSwapLockLastBlockedMessage.clear();
         getLogger().info("MDVTools desactivado.");
     }
 
@@ -201,6 +237,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         loadEquipmentBonusSettings();
         loadCrossbowAutoReloadSettings();
+        loadWeaponSwapLockSettings();
         loadCustomDrops();
 
         debug("Config cargada. Mining=" + miningAllowed.size() + ", Logs=" + logsAllowed.size() + ", Crops=" + cropsAllowed.size() + ", AntiGhost=" + antiGhostAllowed.size() + ", CustomDrops=" + customDrops.size());
@@ -270,6 +307,58 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (!crossbowAutoReloadEnabled) {
             autoReloadProjectiles.clear();
             autoReloadCooldowns.clear();
+        }
+    }
+
+
+    private void loadWeaponSwapLockSettings() {
+        weaponSwapLockEnabled = getConfig().getBoolean("weapon-swap-lock.enabled", true);
+        int durationTicks = Math.max(0, getConfig().getInt("weapon-swap-lock.duration-ticks", 40));
+        weaponSwapLockDurationMs = durationTicks * 50L;
+        weaponSwapLockOnlyWhenNewItemIsWeapon = getConfig().getBoolean("weapon-swap-lock.only-when-new-item-is-weapon", true);
+
+        weaponSwapLockMmoTypes = new HashSet<>();
+        for (String raw : getConfig().getStringList("weapon-swap-lock.mmoitems-types")) {
+            if (raw == null) continue;
+            String type = raw.trim().toUpperCase(Locale.ROOT);
+            if (!type.isBlank()) weaponSwapLockMmoTypes.add(type);
+        }
+        if (weaponSwapLockMmoTypes.isEmpty()) {
+            weaponSwapLockMmoTypes.addAll(Arrays.asList(
+                    "SWORD", "DAGGER", "AXE", "HAMMER", "MACE",
+                    "BOW", "CROSSBOW", "STAFF", "WAND", "CATALYST",
+                    "SPEAR", "GREATSWORD", "GREATSTAFF", "LUTE"
+            ));
+        }
+
+        weaponSwapLockFallbackEnabled = getConfig().getBoolean("weapon-swap-lock.fallback-vanilla-materials.enabled", false);
+        weaponSwapLockFallbackMaterials = EnumSet.noneOf(Material.class);
+        for (String raw : getConfig().getStringList("weapon-swap-lock.fallback-vanilla-materials.materials")) {
+            Material material = Material.matchMaterial(raw);
+            if (material != null) {
+                weaponSwapLockFallbackMaterials.add(material);
+            } else if (raw != null && !raw.isBlank()) {
+                getLogger().warning("Material inválido en weapon-swap-lock.fallback-vanilla-materials.materials: " + raw);
+            }
+        }
+
+        weaponSwapLockBlockInteract = getConfig().getBoolean("weapon-swap-lock.block.interact-clicks", true);
+        weaponSwapLockBlockMeleeHit = getConfig().getBoolean("weapon-swap-lock.block.melee-hit", true);
+        weaponSwapLockBlockBowShoot = getConfig().getBoolean("weapon-swap-lock.block.bow-shoot", true);
+        weaponSwapLockBlockedMessage = color(getConfig().getString("weapon-swap-lock.messages.blocked", "&cAún no afirmas bien el arma en tus manos."));
+        weaponSwapLockBlockedMessageCooldownMs = Math.max(0L, getConfig().getLong("weapon-swap-lock.messages.cooldown-ms", 800L));
+
+        weaponSwapLockReadyFeedbackEnabled = getConfig().getBoolean("weapon-swap-lock.ready-feedback.enabled", true);
+        weaponSwapLockReadySoundName = getConfig().getString("weapon-swap-lock.ready-feedback.sound.value", "block.note_block.hat");
+        weaponSwapLockReadySoundVolume = (float) getConfig().getDouble("weapon-swap-lock.ready-feedback.sound.volume", 0.3);
+        weaponSwapLockReadySoundPitch = (float) getConfig().getDouble("weapon-swap-lock.ready-feedback.sound.pitch", 1.6);
+        weaponSwapLockReadyParticlesEnabled = getConfig().getBoolean("weapon-swap-lock.ready-feedback.particles.enabled", true);
+        weaponSwapLockReadyParticleName = getConfig().getString("weapon-swap-lock.ready-feedback.particles.particle", "CRIT");
+        weaponSwapLockReadyParticleAmount = Math.max(0, getConfig().getInt("weapon-swap-lock.ready-feedback.particles.amount", 5));
+
+        if (!weaponSwapLockEnabled || weaponSwapLockDurationMs <= 0L) {
+            weaponSwapLockUntil.clear();
+            weaponSwapLockLastBlockedMessage.clear();
         }
     }
 
@@ -395,6 +484,88 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
 
+
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onWeaponSwapHotbar(PlayerItemHeldEvent event) {
+        if (!weaponSwapLockEnabled || weaponSwapLockDurationMs <= 0L) return;
+        Player player = event.getPlayer();
+        if (player == null) return;
+
+        PlayerInventory inventory = player.getInventory();
+        ItemStack oldItem = inventory.getItem(event.getPreviousSlot());
+        ItemStack newItem = inventory.getItem(event.getNewSlot());
+        handlePossibleWeaponSwap(player, oldItem, newItem);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onWeaponSwapHands(PlayerSwapHandItemsEvent event) {
+        if (!weaponSwapLockEnabled || weaponSwapLockDurationMs <= 0L) return;
+        // Después del swap, el item de offhand pasa a ser el arma de la mano principal.
+        handlePossibleWeaponSwap(event.getPlayer(), event.getMainHandItem(), event.getOffHandItem());
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onWeaponSwapLockInteract(PlayerInteractEvent event) {
+        if (!weaponSwapLockEnabled || !weaponSwapLockBlockInteract) return;
+        Player player = event.getPlayer();
+        if (!isWeaponSwapLocked(player)) return;
+
+        ItemStack item = event.getItem();
+        if (item == null || item.getType() == Material.AIR) {
+            item = player.getInventory().getItemInMainHand();
+        }
+        if (!isWeaponSwapLockWeapon(item)) return;
+
+        event.setCancelled(true);
+        sendWeaponSwapLockBlockedFeedback(player);
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onWeaponSwapLockInteractEntity(PlayerInteractEntityEvent event) {
+        if (!weaponSwapLockEnabled || !weaponSwapLockBlockInteract) return;
+        Player player = event.getPlayer();
+        if (!isWeaponSwapLocked(player)) return;
+
+        ItemStack item = player.getInventory().getItemInMainHand();
+        if (!isWeaponSwapLockWeapon(item)) return;
+
+        event.setCancelled(true);
+        sendWeaponSwapLockBlockedFeedback(player);
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onWeaponSwapLockMeleeHit(EntityDamageByEntityEvent event) {
+        if (!weaponSwapLockEnabled || !weaponSwapLockBlockMeleeHit) return;
+        if (!(event.getDamager() instanceof Player player)) return;
+        if (!isWeaponSwapLocked(player)) return;
+
+        ItemStack item = player.getInventory().getItemInMainHand();
+        if (!isWeaponSwapLockWeapon(item)) return;
+
+        event.setCancelled(true);
+        sendWeaponSwapLockBlockedFeedback(player);
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onWeaponSwapLockBowShoot(EntityShootBowEvent event) {
+        if (!weaponSwapLockEnabled || !weaponSwapLockBlockBowShoot) return;
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (!isWeaponSwapLocked(player)) return;
+
+        ItemStack item = event.getBow();
+        if (!isWeaponSwapLockWeapon(item)) return;
+
+        event.setCancelled(true);
+        sendWeaponSwapLockBlockedFeedback(player);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onWeaponSwapLockQuit(PlayerQuitEvent event) {
+        UUID id = event.getPlayer().getUniqueId();
+        weaponSwapLockUntil.remove(id);
+        weaponSwapLockLastBlockedMessage.remove(id);
+    }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onAutoReloadShoot(EntityShootBowEvent event) {
@@ -1006,6 +1177,161 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
 
+
+
+    private void handlePossibleWeaponSwap(Player player, ItemStack oldItem, ItemStack newItem) {
+        if (player == null) return;
+        if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
+
+        boolean newIsWeapon = isWeaponSwapLockWeapon(newItem);
+        if (weaponSwapLockOnlyWhenNewItemIsWeapon && !newIsWeapon) return;
+        if (!weaponSwapLockOnlyWhenNewItemIsWeapon && !newIsWeapon && !isWeaponSwapLockWeapon(oldItem)) return;
+
+        applyWeaponSwapLock(player);
+    }
+
+    private void applyWeaponSwapLock(Player player) {
+        long until = System.currentTimeMillis() + weaponSwapLockDurationMs;
+        UUID id = player.getUniqueId();
+        weaponSwapLockUntil.put(id, until);
+
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            Player online = Bukkit.getPlayer(id);
+            if (online == null || !online.isOnline()) return;
+            Long currentUntil = weaponSwapLockUntil.get(id);
+            if (currentUntil == null) return;
+            if (System.currentTimeMillis() + 25L < currentUntil) return;
+            weaponSwapLockUntil.remove(id);
+            playWeaponSwapReadyFeedback(online);
+        }, Math.max(1L, weaponSwapLockDurationMs / 50L));
+    }
+
+    private boolean isWeaponSwapLocked(Player player) {
+        if (player == null) return false;
+        Long until = weaponSwapLockUntil.get(player.getUniqueId());
+        if (until == null) return false;
+
+        if (System.currentTimeMillis() >= until) {
+            weaponSwapLockUntil.remove(player.getUniqueId());
+            return false;
+        }
+        return true;
+    }
+
+    private void sendWeaponSwapLockBlockedFeedback(Player player) {
+        if (player == null || weaponSwapLockBlockedMessage == null || weaponSwapLockBlockedMessage.isBlank()) return;
+        long now = System.currentTimeMillis();
+        UUID id = player.getUniqueId();
+        long last = weaponSwapLockLastBlockedMessage.getOrDefault(id, 0L);
+        if (weaponSwapLockBlockedMessageCooldownMs > 0L && now - last < weaponSwapLockBlockedMessageCooldownMs) return;
+        weaponSwapLockLastBlockedMessage.put(id, now);
+        player.sendMessage(prefix + weaponSwapLockBlockedMessage);
+    }
+
+    private void playWeaponSwapReadyFeedback(Player player) {
+        if (!weaponSwapLockReadyFeedbackEnabled || player == null || !player.isOnline()) return;
+
+        if (weaponSwapLockReadySoundName != null && !weaponSwapLockReadySoundName.isBlank()) {
+            try {
+                player.playSound(player.getLocation(), weaponSwapLockReadySoundName, weaponSwapLockReadySoundVolume, weaponSwapLockReadySoundPitch);
+            } catch (Throwable ignored) {
+                try {
+                    Sound sound = Sound.valueOf(weaponSwapLockReadySoundName.toUpperCase(Locale.ROOT).replace('.', '_'));
+                    player.playSound(player.getLocation(), sound, weaponSwapLockReadySoundVolume, weaponSwapLockReadySoundPitch);
+                } catch (Throwable ignoredAgain) {
+                    if (debug) getLogger().warning("Sonido inválido para weapon-swap-lock: " + weaponSwapLockReadySoundName);
+                }
+            }
+        }
+
+        if (weaponSwapLockReadyParticlesEnabled && weaponSwapLockReadyParticleAmount > 0 && weaponSwapLockReadyParticleName != null && !weaponSwapLockReadyParticleName.isBlank()) {
+            try {
+                Particle particle = Particle.valueOf(weaponSwapLockReadyParticleName.toUpperCase(Locale.ROOT));
+                player.getWorld().spawnParticle(particle, player.getLocation().add(0, 1.0, 0), weaponSwapLockReadyParticleAmount, 0.18, 0.22, 0.18, 0.01);
+            } catch (Throwable ignored) {
+                if (debug) getLogger().warning("Partícula inválida para weapon-swap-lock: " + weaponSwapLockReadyParticleName);
+            }
+        }
+    }
+
+    private boolean isWeaponSwapLockWeapon(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) return false;
+
+        String mmoType = readMmoItemTypeId(item);
+        if (mmoType != null && weaponSwapLockMmoTypes.contains(mmoType.toUpperCase(Locale.ROOT))) {
+            return true;
+        }
+
+        return weaponSwapLockFallbackEnabled && weaponSwapLockFallbackMaterials.contains(item.getType());
+    }
+
+    private String readMmoItemTypeId(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR) return null;
+        if (!ensureMmoNbtReflection()) return null;
+
+        try {
+            Object nbt = mmoNbtGetMethod.invoke(null, item);
+            if (nbt == null) return null;
+            Object hasType = mmoNbtHasTypeMethod.invoke(nbt);
+            if (!(hasType instanceof Boolean) || !((Boolean) hasType)) return null;
+
+            Object typeObject = mmoNbtGetTypeMethod.invoke(nbt);
+            return extractTypeId(typeObject);
+        } catch (Throwable throwable) {
+            if (debug) getLogger().warning("No pude leer tipo MMOItems del item: " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+            return null;
+        }
+    }
+
+    private boolean ensureMmoNbtReflection() {
+        if (mmoNbtReflectionTried) return mmoNbtItemClass != null;
+        mmoNbtReflectionTried = true;
+
+        String[] classNames = new String[]{
+                "net.Indyuce.mmoitems.api.item.NBTItem",
+                "io.lumine.mythic.lib.api.item.NBTItem"
+        };
+
+        for (String className : classNames) {
+            try {
+                Class<?> clazz = Class.forName(className);
+                Method get = clazz.getMethod("get", ItemStack.class);
+                Method hasType = clazz.getMethod("hasType");
+                Method getType = clazz.getMethod("getType");
+
+                mmoNbtItemClass = clazz;
+                mmoNbtGetMethod = get;
+                mmoNbtHasTypeMethod = hasType;
+                mmoNbtGetTypeMethod = getType;
+                debug("NBTItem de MMOItems detectado: " + className);
+                return true;
+            } catch (Throwable ignored) {
+            }
+        }
+
+        if (debug) getLogger().warning("No encontré NBTItem de MMOItems/MythicLib. weapon-swap-lock usará solo fallback-vanilla-materials si está activado.");
+        return false;
+    }
+
+    private String extractTypeId(Object typeObject) {
+        if (typeObject == null) return null;
+        if (typeObject instanceof String string) return string.trim().toUpperCase(Locale.ROOT);
+
+        for (String methodName : new String[]{"getId", "getName", "name"}) {
+            try {
+                Method method = typeObject.getClass().getMethod(methodName);
+                Object value = method.invoke(typeObject);
+                if (value != null) {
+                    String text = value.toString().trim();
+                    if (!text.isBlank()) return text.toUpperCase(Locale.ROOT);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        String text = typeObject.toString().trim();
+        return text.isBlank() ? null : text.toUpperCase(Locale.ROOT);
+    }
 
     private boolean isAutoReloadCrossbow(ItemStack item) {
         if (item == null || item.getType() != Material.CROSSBOW) return false;

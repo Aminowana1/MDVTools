@@ -1,6 +1,25 @@
-# MDVTools 1.0.4
+# MDVTools 1.0.5
 
 Herramientas de profesión para MDVCRAFT.
+
+
+## Cambios 1.0.5
+
+Agrega `weapon-swap-lock`, un bloqueo corto al cambiar a un arma MMOItems para evitar abuso de habilidades por hotbar swap.
+
+Funcionamiento:
+
+1. El jugador cambia a un arma configurada en `mmoitems-types`.
+2. Durante 40 ticks por defecto, no puede usar clicks del arma.
+3. Se bloquean clicks/interacciones, golpe melee y disparo vanilla de arco/ballesta mientras dura el bloqueo.
+4. No afecta consumibles, comida, pociones, materiales ni items normales.
+5. Al terminar, reproduce un sonido y partícula sutil.
+
+El sistema es por eventos (`PlayerItemHeldEvent`, `PlayerSwapHandItemsEvent`, `PlayerInteractEvent`, `EntityDamageByEntityEvent`, `EntityShootBowEvent`), sin loops por tick ni escaneo permanente de jugadores.
+
+### Config nueva 1.0.5
+
+Si ya tenías `config.yml`, agrega manualmente el bloque `weapon-swap-lock` del `config.yml` incluido en esta versión.
 
 ## Cambios 1.0.4
 
@@ -90,4 +109,4 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.4.jar`.
+El `.jar` queda en `target/MDVTools-1.0.5.jar`.

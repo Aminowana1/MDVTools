@@ -1,4 +1,4 @@
-# MDVTools 1.0.4
+# MDVTools 1.0.5
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -179,6 +179,83 @@ equipment-bonuses:
   mdvheadores:
     plugin-name: "MDVHeadOres"
 
+
+
+# Bloqueo corto al cambiar a un arma MMOItems.
+# Objetivo: evitar que un jugador cambie de arma y use una habilidad activa inmediatamente.
+# Es event-driven: no revisa jugadores cada tick. Solo actúa cuando cambian slot/mano o intentan usar el arma.
+weapon-swap-lock:
+  enabled: true
+
+  # 40 ticks = 2 segundos.
+  duration-ticks: 40
+
+  # true = aplica el bloqueo cuando el nuevo item en mano principal es un arma.
+  # No afecta consumibles, pociones, comida, materiales ni items normales al usarlos.
+  only-when-new-item-is-weapon: true
+
+  # Tipos de MMOItems considerados armas para este bloqueo.
+  # Usa aquí los IDs de TYPE de MMOItems, no los IDs de items individuales.
+  mmoitems-types:
+    - SWORD
+    - DAGGER
+    - AXE
+    - HAMMER
+    - MACE
+    - BOW
+    - CROSSBOW
+    - STAFF
+    - WAND
+    - CATALYST
+    - SPEAR
+    - GREATSWORD
+    - GREATSTAFF
+    - LUTE
+
+  # Fallback opcional si algún item no puede leerse como MMOItems.
+  # Por defecto está apagado para no bloquear herramientas vanilla por accidente.
+  fallback-vanilla-materials:
+    enabled: false
+    materials:
+      - WOODEN_SWORD
+      - STONE_SWORD
+      - IRON_SWORD
+      - GOLDEN_SWORD
+      - DIAMOND_SWORD
+      - NETHERITE_SWORD
+      - WOODEN_AXE
+      - STONE_AXE
+      - IRON_AXE
+      - GOLDEN_AXE
+      - DIAMOND_AXE
+      - NETHERITE_AXE
+      - BOW
+      - CROSSBOW
+      - MACE
+
+  block:
+    # Bloquea click izquierdo, shift+izquierdo, click derecho y shift+derecho con el arma.
+    interact-clicks: true
+    # Bloquea golpe melee durante el lock.
+    melee-hit: true
+    # Bloquea disparo vanilla de arco/ballesta durante el lock.
+    bow-shoot: true
+
+  messages:
+    blocked: "&cAún no afirmas bien el arma en tus manos."
+    # Evita spam si el jugador clickea varias veces durante los 2 segundos.
+    cooldown-ms: 800
+
+  ready-feedback:
+    enabled: true
+    sound:
+      value: "block.note_block.hat"
+      volume: 0.3
+      pitch: 1.6
+    particles:
+      enabled: true
+      particle: "CRIT"
+      amount: 5
 
 # Pasiva para ballestas: recarga automática al impactar.
 # Lee líneas del lore del item. Recomendado:

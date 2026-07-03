@@ -1,4 +1,4 @@
-# MDVTools 1.0.5
+# MDVTools 1.0.6
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -240,6 +240,14 @@ weapon-swap-lock:
     melee-hit: true
     # Bloquea disparo vanilla de arco/ballesta durante el lock.
     bow-shoot: true
+
+    # Bloquea habilidades de MMOItems durante el lock.
+    # Esto es lo importante para evitar cambiar de arma y castear una habilidad al instante.
+    mmoitems-abilities: true
+
+    # Bloquea skills centralizadas por MythicLib durante el lock.
+    # Se registra por reflexión: si MythicLib no está cargado, no rompe el plugin.
+    mythiclib-skills: true
 
   messages:
     blocked: "&cAún no afirmas bien el arma en tus manos."

@@ -22,6 +22,9 @@ import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
+import org.bukkit.event.Event;
+import org.bukkit.event.Cancellable;
+import org.bukkit.event.EventException;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -39,6 +42,7 @@ import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.CrossbowMeta;
+import org.bukkit.plugin.EventExecutor;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
@@ -127,6 +131,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private boolean weaponSwapLockBlockInteract;
     private boolean weaponSwapLockBlockMeleeHit;
     private boolean weaponSwapLockBlockBowShoot;
+    private boolean weaponSwapLockBlockMmoItemAbilities;
+    private boolean weaponSwapLockBlockMythicLibSkills;
     private String weaponSwapLockBlockedMessage;
     private long weaponSwapLockBlockedMessageCooldownMs;
     private boolean weaponSwapLockReadyFeedbackEnabled;
@@ -138,6 +144,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private int weaponSwapLockReadyParticleAmount;
     private final Map<UUID, Long> weaponSwapLockUntil = new HashMap<>();
     private final Map<UUID, Long> weaponSwapLockLastBlockedMessage = new HashMap<>();
+    private final Set<String> weaponSwapLockHookedEvents = new HashSet<>();
 
     private boolean mmoNbtReflectionTried;
     private Class<?> mmoNbtItemClass;
@@ -170,6 +177,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         ensureCustomDropsFile();
         loadSettings();
         Bukkit.getPluginManager().registerEvents(this, this);
+        registerWeaponSwapLockExternalEvents();
         getLogger().info("MDVTools activado.");
     }
 
@@ -345,6 +353,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         weaponSwapLockBlockInteract = getConfig().getBoolean("weapon-swap-lock.block.interact-clicks", true);
         weaponSwapLockBlockMeleeHit = getConfig().getBoolean("weapon-swap-lock.block.melee-hit", true);
         weaponSwapLockBlockBowShoot = getConfig().getBoolean("weapon-swap-lock.block.bow-shoot", true);
+        weaponSwapLockBlockMmoItemAbilities = getConfig().getBoolean("weapon-swap-lock.block.mmoitems-abilities", true);
+        weaponSwapLockBlockMythicLibSkills = getConfig().getBoolean("weapon-swap-lock.block.mythiclib-skills", true);
         weaponSwapLockBlockedMessage = color(getConfig().getString("weapon-swap-lock.messages.blocked", "&cAún no afirmas bien el arma en tus manos."));
         weaponSwapLockBlockedMessageCooldownMs = Math.max(0L, getConfig().getLong("weapon-swap-lock.messages.cooldown-ms", 800L));
 
@@ -1179,6 +1189,118 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
 
 
+    @SuppressWarnings("unchecked")
+    private void registerWeaponSwapLockExternalEvents() {
+        if (!weaponSwapLockEnabled) return;
+
+        // MMOItems dispara este evento para habilidades de item. Cancelarlo evita que la habilidad se castee
+        // aunque PlayerInteractEvent ya haya sido cancelado.
+        if (weaponSwapLockBlockMmoItemAbilities) {
+            registerWeaponSwapLockExternalEvent("net.Indyuce.mmoitems.api.event.AbilityUseEvent");
+        }
+
+        // MythicLib centraliza skills de MMOItems/MMOCore desde versiones modernas.
+        if (weaponSwapLockBlockMythicLibSkills) {
+            registerWeaponSwapLockExternalEvent("io.lumine.mythic.lib.api.event.skill.PlayerCastSkillEvent");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void registerWeaponSwapLockExternalEvent(String className) {
+        if (weaponSwapLockHookedEvents.contains(className)) return;
+
+        try {
+            Class<?> rawClass = Class.forName(className);
+            if (!Event.class.isAssignableFrom(rawClass)) {
+                if (debug) getLogger().warning("No registré " + className + " porque no extiende Bukkit Event.");
+                return;
+            }
+
+            Class<? extends Event> eventClass = (Class<? extends Event>) rawClass;
+            EventExecutor executor = (listener, event) -> {
+                try {
+                    handleWeaponSwapLockExternalAbilityEvent(event);
+                } catch (Throwable throwable) {
+                    if (debug) {
+                        getLogger().warning("Error revisando weapon-swap-lock en " + event.getEventName() + ": " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+                    }
+                }
+            };
+
+            Bukkit.getPluginManager().registerEvent(eventClass, this, EventPriority.LOWEST, executor, this, false);
+            weaponSwapLockHookedEvents.add(className);
+            debug("weapon-swap-lock conectado a " + className);
+        } catch (ClassNotFoundException ignored) {
+            debug("weapon-swap-lock: evento externo no encontrado: " + className);
+        } catch (Throwable throwable) {
+            if (debug) getLogger().warning("No pude registrar weapon-swap-lock para " + className + ": " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+        }
+    }
+
+    private void handleWeaponSwapLockExternalAbilityEvent(Event event) {
+        if (!weaponSwapLockEnabled) return;
+        if (!(event instanceof Cancellable cancellable)) return;
+        if (cancellable.isCancelled()) return;
+
+        Player player = extractPlayerFromExternalEvent(event);
+        if (player == null) return;
+        if (!isWeaponSwapLocked(player)) return;
+
+        ItemStack item = player.getInventory().getItemInMainHand();
+        if (!isWeaponSwapLockWeapon(item)) return;
+
+        cancellable.setCancelled(true);
+        sendWeaponSwapLockBlockedFeedback(player);
+    }
+
+    private Player extractPlayerFromExternalEvent(Event event) {
+        if (event == null) return null;
+
+        // Muchos eventos de Bukkit/ML heredan o exponen getPlayer().
+        try {
+            Method method = event.getClass().getMethod("getPlayer");
+            Object value = method.invoke(event);
+            if (value instanceof Player player) return player;
+        } catch (Throwable ignored) {
+        }
+
+        // Fallback para APIs que usan getCaster().
+        try {
+            Method method = event.getClass().getMethod("getCaster");
+            Object value = method.invoke(event);
+            Player player = extractPlayerFromUnknownObject(value);
+            if (player != null) return player;
+        } catch (Throwable ignored) {
+        }
+
+        // Fallback para APIs que usan getPlayerData().getPlayer().
+        try {
+            Method method = event.getClass().getMethod("getPlayerData");
+            Object value = method.invoke(event);
+            Player player = extractPlayerFromUnknownObject(value);
+            if (player != null) return player;
+        } catch (Throwable ignored) {
+        }
+
+        return null;
+    }
+
+    private Player extractPlayerFromUnknownObject(Object object) {
+        if (object == null) return null;
+        if (object instanceof Player player) return player;
+
+        for (String methodName : new String[]{"getPlayer", "getBukkitPlayer", "getEntity"}) {
+            try {
+                Method method = object.getClass().getMethod(methodName);
+                Object value = method.invoke(object);
+                if (value instanceof Player player) return player;
+            } catch (Throwable ignored) {
+            }
+        }
+
+        return null;
+    }
+
     private void handlePossibleWeaponSwap(Player player, ItemStack oldItem, ItemStack newItem) {
         if (player == null) return;
         if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
@@ -1200,9 +1322,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             if (online == null || !online.isOnline()) return;
             Long currentUntil = weaponSwapLockUntil.get(id);
             if (currentUntil == null) return;
-            if (System.currentTimeMillis() + 25L < currentUntil) return;
-            weaponSwapLockUntil.remove(id);
-            playWeaponSwapReadyFeedback(online);
+
+            // Si el jugador volvió a cambiar de arma, este aviso viejo ya no corresponde.
+            if (!Objects.equals(currentUntil, until)) return;
+
+            endWeaponSwapLock(online, true);
         }, Math.max(1L, weaponSwapLockDurationMs / 50L));
     }
 
@@ -1212,10 +1336,18 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (until == null) return false;
 
         if (System.currentTimeMillis() >= until) {
-            weaponSwapLockUntil.remove(player.getUniqueId());
+            endWeaponSwapLock(player, true);
             return false;
         }
         return true;
+    }
+
+    private void endWeaponSwapLock(Player player, boolean feedback) {
+        if (player == null) return;
+        weaponSwapLockUntil.remove(player.getUniqueId());
+        if (feedback) {
+            playWeaponSwapReadyFeedback(player);
+        }
     }
 
     private void sendWeaponSwapLockBlockedFeedback(Player player) {
@@ -1601,6 +1733,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             loadSettings();
+            registerWeaponSwapLockExternalEvents();
             sender.sendMessage(prefix + msgReloaded);
             return true;
         }

@@ -112,7 +112,7 @@ mvn clean package
 El `.jar` queda en `target/MDVTools-1.0.5.jar`.
 
 
-## MDVTools 1.0.8
+## MDVTools 1.0.9
 
 ### Weapon swap lock
 
@@ -125,3 +125,8 @@ El `.jar` queda en `target/MDVTools-1.0.5.jar`.
 ## two-handed-ability-lock
 
 Bloquea habilidades de MMOItems/MythicLib cuando el arma principal es de dos manos y la offhand está ocupada. No bloquea ataques básicos ni consumibles; solo cancela el casteo de habilidades. Puede detectar `two-handed` por NBT de MMOItems o por lore configurable como `Dos Manos`.
+
+
+## ability-durability-cost
+
+Cobra 1 punto de durabilidad custom de MMOItems cuando un jugador castea una habilidad de MMOItems/MythicLib desde el item en mano principal. No agrega mensajes propios y solo afecta items con `max-durability` custom de MMOItems.

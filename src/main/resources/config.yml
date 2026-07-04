@@ -1,4 +1,4 @@
-# MDVTools 1.0.8
+# MDVTools 1.0.9
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -274,6 +274,18 @@ weapon-swap-lock:
 # Objetivo: si un arma MMOItems tiene two-handed: true / lore de dos manos,
 # no pueda castear habilidades mientras la offhand esté ocupada.
 # Es event-driven y solo revisa cuando se intenta usar una habilidad MMOItems/MythicLib.
+# Cobra 1 punto de durabilidad custom de MMOItems cada vez que se castea una habilidad.
+# No muestra mensajes propios: MMOItems sigue manejando su durabilidad/lore.
+# Solo afecta items con max-durability custom de MMOItems.
+ability-durability-cost:
+  enabled: true
+  cost: 1
+  only-custom-durability: true
+
+  # Evita cobrar doble si MMOItems y MythicLib disparan eventos para el mismo casteo.
+  dedupe-window-ms: 75
+
+
 two-handed-ability-lock:
   enabled: true
 

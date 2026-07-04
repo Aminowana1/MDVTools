@@ -39,6 +39,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.CrossbowMeta;
@@ -50,6 +51,7 @@ import org.bukkit.util.Vector;
 import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Constructor;
 import java.text.Normalizer;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -159,6 +161,12 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private long twoHandedAbilityLockBlockedMessageCooldownMs;
     private final Map<UUID, Long> twoHandedAbilityLockLastBlockedMessage = new HashMap<>();
 
+    private boolean abilityDurabilityCostEnabled;
+    private int abilityDurabilityCostAmount;
+    private boolean abilityDurabilityOnlyCustomDurability;
+    private long abilityDurabilityDedupeWindowMs;
+    private final Map<UUID, AbilityDurabilityCharge> abilityDurabilityLastCharge = new HashMap<>();
+
     private boolean mmoNbtReflectionTried;
     private Class<?> mmoNbtItemClass;
     private Method mmoNbtGetMethod;
@@ -166,6 +174,16 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private Method mmoNbtGetTypeMethod;
     private Method mmoNbtGetStringMethod;
     private Method mmoNbtGetBooleanMethod;
+    private Method mmoNbtGetIntegerMethod;
+    private Method mmoNbtHasTagMethod;
+
+    private boolean mmoDurabilityReflectionTried;
+    private Constructor<?> mmoDurabilityConstructorItemStack;
+    private Constructor<?> mmoDurabilityConstructorNbt;
+    private Method mmoDurabilityIsValidMethod;
+    private Method mmoDurabilityGetDurabilityMethod;
+    private Method mmoDurabilityDecreaseMethod;
+    private Method mmoDurabilityToItemMethod;
 
     private boolean durabilityEnabled;
     private int durabilityCostBlock;
@@ -202,6 +220,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         weaponSwapLockLastBlockedMessage.clear();
         weaponSwapLastWeaponBeforeNonWeapon.clear();
         twoHandedAbilityLockLastBlockedMessage.clear();
+        abilityDurabilityLastCharge.clear();
         getLogger().info("MDVTools desactivado.");
     }
 
@@ -264,6 +283,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         loadCrossbowAutoReloadSettings();
         loadWeaponSwapLockSettings();
         loadTwoHandedAbilityLockSettings();
+        loadAbilityDurabilityCostSettings();
         loadCustomDrops();
 
         debug("Config cargada. Mining=" + miningAllowed.size() + ", Logs=" + logsAllowed.size() + ", Crops=" + cropsAllowed.size() + ", AntiGhost=" + antiGhostAllowed.size() + ", CustomDrops=" + customDrops.size());
@@ -445,6 +465,19 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         if (!twoHandedAbilityLockEnabled) {
             twoHandedAbilityLockLastBlockedMessage.clear();
+        }
+    }
+
+
+
+    private void loadAbilityDurabilityCostSettings() {
+        abilityDurabilityCostEnabled = getConfig().getBoolean("ability-durability-cost.enabled", true);
+        abilityDurabilityCostAmount = Math.max(0, getConfig().getInt("ability-durability-cost.cost", 1));
+        abilityDurabilityOnlyCustomDurability = getConfig().getBoolean("ability-durability-cost.only-custom-durability", true);
+        abilityDurabilityDedupeWindowMs = Math.max(0L, getConfig().getLong("ability-durability-cost.dedupe-window-ms", 75L));
+
+        if (!abilityDurabilityCostEnabled || abilityDurabilityCostAmount <= 0) {
+            abilityDurabilityLastCharge.clear();
         }
     }
 
@@ -1269,8 +1302,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     @SuppressWarnings("unchecked")
     private void registerWeaponSwapLockExternalEvents() {
-        boolean hookMmoItemsAbilities = (weaponSwapLockEnabled && weaponSwapLockBlockMmoItemAbilities) || twoHandedAbilityLockEnabled;
-        boolean hookMythicLibSkills = (weaponSwapLockEnabled && weaponSwapLockBlockMythicLibSkills) || twoHandedAbilityLockEnabled;
+        boolean hookMmoItemsAbilities = (weaponSwapLockEnabled && weaponSwapLockBlockMmoItemAbilities) || twoHandedAbilityLockEnabled || abilityDurabilityCostEnabled;
+        boolean hookMythicLibSkills = (weaponSwapLockEnabled && weaponSwapLockBlockMythicLibSkills) || twoHandedAbilityLockEnabled || abilityDurabilityCostEnabled;
         if (!hookMmoItemsAbilities && !hookMythicLibSkills) return;
 
         // MMOItems dispara este evento para habilidades de item. Cancelarlo evita que la habilidad se castee
@@ -1330,14 +1363,18 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             return;
         }
 
-        if (!weaponSwapLockEnabled) return;
-        if (!isWeaponSwapLocked(player)) return;
+        if (weaponSwapLockEnabled && isWeaponSwapLocked(player)) {
+            ItemStack item = player.getInventory().getItemInMainHand();
+            if (isWeaponSwapLockWeapon(item)) {
+                cancellable.setCancelled(true);
+                sendWeaponSwapLockBlockedFeedback(player);
+                return;
+            }
+        }
 
-        ItemStack item = player.getInventory().getItemInMainHand();
-        if (!isWeaponSwapLockWeapon(item)) return;
-
-        cancellable.setCancelled(true);
-        sendWeaponSwapLockBlockedFeedback(player);
+        if (!chargeAbilityCustomDurability(player)) {
+            cancellable.setCancelled(true);
+        }
     }
 
     private Player extractPlayerFromExternalEvent(Event event) {
@@ -1458,6 +1495,174 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (twoHandedAbilityLockBlockedMessageCooldownMs > 0L && now - last < twoHandedAbilityLockBlockedMessageCooldownMs) return;
         twoHandedAbilityLockLastBlockedMessage.put(id, now);
         player.sendMessage(prefix + twoHandedAbilityLockBlockedMessage);
+    }
+
+    private boolean chargeAbilityCustomDurability(Player player) {
+        if (!abilityDurabilityCostEnabled || abilityDurabilityCostAmount <= 0) return true;
+        if (player == null) return true;
+        if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return true;
+
+        PlayerInventory inventory = player.getInventory();
+        ItemStack item = inventory.getItemInMainHand();
+        if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) return true;
+
+        if (abilityDurabilityOnlyCustomDurability && !hasMmoCustomDurability(item)) return true;
+
+        UUID playerId = player.getUniqueId();
+        String identity = getAbilityDurabilityItemIdentity(item);
+        long now = System.currentTimeMillis();
+        AbilityDurabilityCharge lastCharge = abilityDurabilityLastCharge.get(playerId);
+        if (lastCharge != null
+                && lastCharge.itemIdentity.equals(identity)
+                && abilityDurabilityDedupeWindowMs > 0L
+                && now - lastCharge.createdAtMs <= abilityDurabilityDedupeWindowMs) {
+            return true;
+        }
+
+        Boolean charged = chargeAbilityCustomDurabilityWithMmoItems(player, item);
+        if (charged != null) {
+            if (charged) {
+                abilityDurabilityLastCharge.put(playerId, new AbilityDurabilityCharge(identity, now));
+            }
+            return charged;
+        }
+
+        // Fallback mínimo: si por alguna razón no se pudo enganchar la API de durabilidad,
+        // no cancela ni rompe habilidades. Así no deja armas inutilizables por incompatibilidad.
+        if (debug) getLogger().warning("No pude conectar con la API de durabilidad custom de MMOItems para cobrar habilidad.");
+        return true;
+    }
+
+    private Boolean chargeAbilityCustomDurabilityWithMmoItems(Player player, ItemStack item) {
+        if (!ensureMmoDurabilityReflection()) return null;
+
+        try {
+            Object durabilityItem;
+            if (mmoDurabilityConstructorItemStack != null) {
+                durabilityItem = mmoDurabilityConstructorItemStack.newInstance(player, item);
+            } else if (mmoDurabilityConstructorNbt != null) {
+                Object nbt = mmoNbtGetMethod.invoke(null, item);
+                durabilityItem = mmoDurabilityConstructorNbt.newInstance(player, nbt, EquipmentSlot.HAND);
+            } else {
+                return null;
+            }
+
+            if (mmoDurabilityIsValidMethod != null) {
+                Object valid = mmoDurabilityIsValidMethod.invoke(durabilityItem);
+                if (valid instanceof Boolean bool && !bool) return true;
+            }
+
+            int current = -1;
+            if (mmoDurabilityGetDurabilityMethod != null) {
+                Object value = mmoDurabilityGetDurabilityMethod.invoke(durabilityItem);
+                if (value instanceof Number number) current = number.intValue();
+            }
+
+            if (current == 0) return false;
+
+            if (mmoDurabilityDecreaseMethod == null || mmoDurabilityToItemMethod == null) return null;
+
+            mmoDurabilityDecreaseMethod.invoke(durabilityItem, abilityDurabilityCostAmount);
+            Object result = mmoDurabilityToItemMethod.invoke(durabilityItem);
+
+            if (result == null) {
+                player.getInventory().setItemInMainHand(null);
+            } else if (result instanceof ItemStack newItem) {
+                player.getInventory().setItemInMainHand(newItem);
+            } else {
+                return null;
+            }
+            return true;
+        } catch (Throwable throwable) {
+            if (debug) getLogger().warning("Error cobrando durabilidad custom por habilidad: " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+            return null;
+        }
+    }
+
+    private boolean hasMmoCustomDurability(ItemStack item) {
+        Integer max = readMmoItemInteger(item, "MMOITEMS_MAX_DURABILITY");
+        return max != null && max > 0;
+    }
+
+    private String getAbilityDurabilityItemIdentity(ItemStack item) {
+        String type = readMmoItemTypeId(item);
+        String id = readMmoItemString(item, "MMOITEMS_ITEM_ID");
+        if (type != null && id != null) return type + ":" + id;
+        return fallbackItemSignature(item);
+    }
+
+    private boolean ensureMmoDurabilityReflection() {
+        if (mmoDurabilityReflectionTried) return mmoDurabilityDecreaseMethod != null && mmoDurabilityToItemMethod != null;
+        mmoDurabilityReflectionTried = true;
+
+        if (!ensureMmoNbtReflection()) return false;
+
+        // MMOItems moderno: DurabilityItem(Player, ItemStack) con decreaseDurability() y toItem().
+        try {
+            Class<?> durabilityClass = Class.forName("net.Indyuce.mmoitems.api.interaction.util.DurabilityItem");
+            Constructor<?> constructor = durabilityClass.getConstructor(Player.class, ItemStack.class);
+            Method decrease = findMethodInHierarchy(durabilityClass, "decreaseDurability", int.class);
+            Method toItem = findMethodInHierarchy(durabilityClass, "toItem");
+            Method isValid = findMethodInHierarchy(durabilityClass, "isValid");
+            Method getDurability = findMethodInHierarchy(durabilityClass, "getDurability");
+
+            if (decrease != null && toItem != null) {
+                mmoDurabilityConstructorItemStack = constructor;
+                mmoDurabilityDecreaseMethod = decrease;
+                mmoDurabilityToItemMethod = toItem;
+                mmoDurabilityIsValidMethod = isValid;
+                mmoDurabilityGetDurabilityMethod = getDurability;
+                debug("DurabilityItem de MMOItems detectado.");
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        // MMOItems alternativo: CustomDurabilityItem(Player, NBTItem, EquipmentSlot).
+        try {
+            Class<?> customClass = Class.forName("net.Indyuce.mmoitems.api.interaction.util.CustomDurabilityItem");
+            Constructor<?> constructor = customClass.getConstructor(Player.class, mmoNbtItemClass, EquipmentSlot.class);
+            Method decrease = findMethodInHierarchy(customClass, "decreaseDurability", int.class);
+            if (decrease == null) decrease = findMethodInHierarchy(customClass, "onDurabilityDecrease", int.class);
+            Method toItem = findMethodInHierarchy(customClass, "toItem");
+            if (toItem == null) toItem = findMethodInHierarchy(customClass, "applyChanges");
+            Method isValid = findMethodInHierarchy(customClass, "isValid");
+            Method getDurability = findMethodInHierarchy(customClass, "getDurability");
+
+            if (decrease != null && toItem != null) {
+                mmoDurabilityConstructorNbt = constructor;
+                mmoDurabilityDecreaseMethod = decrease;
+                mmoDurabilityToItemMethod = toItem;
+                mmoDurabilityIsValidMethod = isValid;
+                mmoDurabilityGetDurabilityMethod = getDurability;
+                debug("CustomDurabilityItem de MMOItems detectado.");
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        if (debug) getLogger().warning("No encontré clases compatibles de durabilidad custom de MMOItems.");
+        return false;
+    }
+
+    private Method findMethodInHierarchy(Class<?> clazz, String name, Class<?>... parameterTypes) {
+        Class<?> current = clazz;
+        while (current != null) {
+            try {
+                Method method = current.getDeclaredMethod(name, parameterTypes);
+                method.setAccessible(true);
+                return method;
+            } catch (Throwable ignored) {
+            }
+            try {
+                Method method = current.getMethod(name, parameterTypes);
+                method.setAccessible(true);
+                return method;
+            } catch (Throwable ignored) {
+            }
+            current = current.getSuperclass();
+        }
+        return null;
     }
 
     private void handlePossibleWeaponSwap(Player player, ItemStack oldItem, ItemStack newItem) {
@@ -1684,6 +1889,25 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    private Integer readMmoItemInteger(ItemStack item, String key) {
+        if (item == null || item.getType() == Material.AIR || key == null || key.isBlank()) return null;
+        if (!ensureMmoNbtReflection() || mmoNbtGetIntegerMethod == null) return null;
+
+        try {
+            Object nbt = mmoNbtGetMethod.invoke(null, item);
+            if (nbt == null) return null;
+            if (mmoNbtHasTagMethod != null) {
+                Object hasTag = mmoNbtHasTagMethod.invoke(nbt, key);
+                if (hasTag instanceof Boolean bool && !bool) return null;
+            }
+            Object value = mmoNbtGetIntegerMethod.invoke(nbt, key);
+            if (value instanceof Number number) return number.intValue();
+            return null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private boolean ensureMmoNbtReflection() {
         if (mmoNbtReflectionTried) return mmoNbtItemClass != null;
         mmoNbtReflectionTried = true;
@@ -1711,6 +1935,18 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
                 } catch (Throwable ignored) {
                     // Algunas versiones no exponen lectura booleana directa.
                 }
+                Method getInteger = null;
+                try {
+                    getInteger = clazz.getMethod("getInteger", String.class);
+                } catch (Throwable ignored) {
+                    // Algunas versiones no exponen lectura entera directa.
+                }
+                Method hasTag = null;
+                try {
+                    hasTag = clazz.getMethod("hasTag", String.class);
+                } catch (Throwable ignored) {
+                    // Algunas versiones no exponen hasTag.
+                }
 
                 mmoNbtItemClass = clazz;
                 mmoNbtGetMethod = get;
@@ -1718,6 +1954,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
                 mmoNbtGetTypeMethod = getType;
                 mmoNbtGetStringMethod = getString;
                 mmoNbtGetBooleanMethod = getBoolean;
+                mmoNbtGetIntegerMethod = getInteger;
+                mmoNbtHasTagMethod = hasTag;
                 debug("NBTItem de MMOItems detectado: " + className);
                 return true;
             } catch (Throwable ignored) {
@@ -2079,6 +2317,16 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         AutoReloadShot(UUID playerId, long createdAtMs) {
             this.playerId = playerId;
+            this.createdAtMs = createdAtMs;
+        }
+    }
+
+    private static final class AbilityDurabilityCharge {
+        final String itemIdentity;
+        final long createdAtMs;
+
+        AbilityDurabilityCharge(String itemIdentity, long createdAtMs) {
+            this.itemIdentity = itemIdentity == null ? "" : itemIdentity;
             this.createdAtMs = createdAtMs;
         }
     }

@@ -1,4 +1,4 @@
-# MDVTools 1.0.6
+# MDVTools 1.0.7
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -194,6 +194,10 @@ weapon-swap-lock:
   # No afecta consumibles, pociones, comida, materiales ni items normales al usarlos.
   only-when-new-item-is-weapon: true
 
+  # true = si pasas de arma -> consumible/item no arma -> la misma arma, no aplica un lock nuevo.
+  # Sirve para poder tomar una poción/maná y volver al arma que ya estabas usando sin castigo.
+  ignore-return-to-same-weapon-after-non-weapon: true
+
   # Tipos de MMOItems considerados armas para este bloqueo.
   # Usa aquí los IDs de TYPE de MMOItems, no los IDs de items individuales.
   mmoitems-types:
@@ -235,11 +239,11 @@ weapon-swap-lock:
 
   block:
     # Bloquea click izquierdo, shift+izquierdo, click derecho y shift+derecho con el arma.
-    interact-clicks: true
+    interact-clicks: false
     # Bloquea golpe melee durante el lock.
-    melee-hit: true
+    melee-hit: false
     # Bloquea disparo vanilla de arco/ballesta durante el lock.
-    bow-shoot: true
+    bow-shoot: false
 
     # Bloquea habilidades de MMOItems durante el lock.
     # Esto es lo importante para evitar cambiar de arma y castear una habilidad al instante.

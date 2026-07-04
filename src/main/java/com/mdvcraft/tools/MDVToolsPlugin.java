@@ -125,6 +125,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private boolean weaponSwapLockEnabled;
     private long weaponSwapLockDurationMs;
     private boolean weaponSwapLockOnlyWhenNewItemIsWeapon;
+    private boolean weaponSwapLockIgnoreReturnToSameWeaponAfterNonWeapon;
     private Set<String> weaponSwapLockMmoTypes = new HashSet<>();
     private boolean weaponSwapLockFallbackEnabled;
     private Set<Material> weaponSwapLockFallbackMaterials = EnumSet.noneOf(Material.class);
@@ -144,6 +145,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private int weaponSwapLockReadyParticleAmount;
     private final Map<UUID, Long> weaponSwapLockUntil = new HashMap<>();
     private final Map<UUID, Long> weaponSwapLockLastBlockedMessage = new HashMap<>();
+    private final Map<UUID, WeaponSwapItemIdentity> weaponSwapLastWeaponBeforeNonWeapon = new HashMap<>();
     private final Set<String> weaponSwapLockHookedEvents = new HashSet<>();
 
     private boolean mmoNbtReflectionTried;
@@ -151,6 +153,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private Method mmoNbtGetMethod;
     private Method mmoNbtHasTypeMethod;
     private Method mmoNbtGetTypeMethod;
+    private Method mmoNbtGetStringMethod;
 
     private boolean durabilityEnabled;
     private int durabilityCostBlock;
@@ -185,6 +188,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     public void onDisable() {
         weaponSwapLockUntil.clear();
         weaponSwapLockLastBlockedMessage.clear();
+        weaponSwapLastWeaponBeforeNonWeapon.clear();
         getLogger().info("MDVTools desactivado.");
     }
 
@@ -324,6 +328,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         int durationTicks = Math.max(0, getConfig().getInt("weapon-swap-lock.duration-ticks", 40));
         weaponSwapLockDurationMs = durationTicks * 50L;
         weaponSwapLockOnlyWhenNewItemIsWeapon = getConfig().getBoolean("weapon-swap-lock.only-when-new-item-is-weapon", true);
+        weaponSwapLockIgnoreReturnToSameWeaponAfterNonWeapon = getConfig().getBoolean("weapon-swap-lock.ignore-return-to-same-weapon-after-non-weapon", true);
 
         weaponSwapLockMmoTypes = new HashSet<>();
         for (String raw : getConfig().getStringList("weapon-swap-lock.mmoitems-types")) {
@@ -369,6 +374,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (!weaponSwapLockEnabled || weaponSwapLockDurationMs <= 0L) {
             weaponSwapLockUntil.clear();
             weaponSwapLockLastBlockedMessage.clear();
+            weaponSwapLastWeaponBeforeNonWeapon.clear();
         }
     }
 
@@ -575,6 +581,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         UUID id = event.getPlayer().getUniqueId();
         weaponSwapLockUntil.remove(id);
         weaponSwapLockLastBlockedMessage.remove(id);
+        weaponSwapLastWeaponBeforeNonWeapon.remove(id);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -1305,11 +1312,72 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (player == null) return;
         if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
 
+        UUID id = player.getUniqueId();
+        boolean oldIsWeapon = isWeaponSwapLockWeapon(oldItem);
         boolean newIsWeapon = isWeaponSwapLockWeapon(newItem);
+
+        // Caso importante para MDVCRAFT: arma -> consumible/poción -> misma arma.
+        // Se guarda el arma al salir a un item que no es arma, y si vuelve a la misma no se aplica lock nuevo.
+        if (oldIsWeapon && !newIsWeapon) {
+            if (weaponSwapLockIgnoreReturnToSameWeaponAfterNonWeapon) {
+                WeaponSwapItemIdentity oldIdentity = getWeaponSwapItemIdentity(oldItem);
+                if (oldIdentity != null) {
+                    weaponSwapLastWeaponBeforeNonWeapon.put(id, oldIdentity);
+                }
+            }
+            return;
+        }
+
+        if (!oldIsWeapon && !newIsWeapon) return;
+
+        if (newIsWeapon) {
+            if (weaponSwapLockIgnoreReturnToSameWeaponAfterNonWeapon && !oldIsWeapon) {
+                WeaponSwapItemIdentity previousWeapon = weaponSwapLastWeaponBeforeNonWeapon.get(id);
+                WeaponSwapItemIdentity newIdentity = getWeaponSwapItemIdentity(newItem);
+                if (previousWeapon != null && previousWeapon.equals(newIdentity)) {
+                    weaponSwapLastWeaponBeforeNonWeapon.remove(id);
+                    debug("weapon-swap-lock omitido: retorno a la misma arma tras item no arma: " + player.getName());
+                    return;
+                }
+            }
+            weaponSwapLastWeaponBeforeNonWeapon.remove(id);
+        }
+
         if (weaponSwapLockOnlyWhenNewItemIsWeapon && !newIsWeapon) return;
-        if (!weaponSwapLockOnlyWhenNewItemIsWeapon && !newIsWeapon && !isWeaponSwapLockWeapon(oldItem)) return;
+        if (!weaponSwapLockOnlyWhenNewItemIsWeapon && !newIsWeapon && !oldIsWeapon) return;
 
         applyWeaponSwapLock(player);
+    }
+
+    private WeaponSwapItemIdentity getWeaponSwapItemIdentity(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) return null;
+
+        String mmoType = readMmoItemTypeId(item);
+        if (mmoType != null && weaponSwapLockMmoTypes.contains(mmoType.toUpperCase(Locale.ROOT))) {
+            String mmoId = readMmoItemString(item, "MMOITEMS_ITEM_ID");
+            if (mmoId == null || mmoId.isBlank()) {
+                mmoId = fallbackItemSignature(item);
+            }
+            return new WeaponSwapItemIdentity("MMOITEMS", mmoType.toUpperCase(Locale.ROOT), mmoId);
+        }
+
+        if (weaponSwapLockFallbackEnabled && weaponSwapLockFallbackMaterials.contains(item.getType())) {
+            return new WeaponSwapItemIdentity("VANILLA", item.getType().name(), fallbackItemSignature(item));
+        }
+
+        return null;
+    }
+
+    private String fallbackItemSignature(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR) return "AIR";
+        ItemMeta meta = item.getItemMeta();
+        String display = "";
+        int customModelData = 0;
+        if (meta != null) {
+            if (meta.hasDisplayName()) display = ChatColor.stripColor(meta.getDisplayName());
+            if (meta.hasCustomModelData()) customModelData = meta.getCustomModelData();
+        }
+        return item.getType().name() + "|" + normalize(display) + "|" + customModelData;
     }
 
     private void applyWeaponSwapLock(Player player) {
@@ -1415,6 +1483,23 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    private String readMmoItemString(ItemStack item, String key) {
+        if (item == null || item.getType() == Material.AIR || key == null || key.isBlank()) return null;
+        if (!ensureMmoNbtReflection() || mmoNbtGetStringMethod == null) return null;
+
+        try {
+            Object nbt = mmoNbtGetMethod.invoke(null, item);
+            if (nbt == null) return null;
+            Object value = mmoNbtGetStringMethod.invoke(nbt, key);
+            if (value == null) return null;
+            String string = String.valueOf(value).trim();
+            return string.isBlank() ? null : string.toUpperCase(Locale.ROOT);
+        } catch (Throwable throwable) {
+            if (debug) getLogger().warning("No pude leer NBT MMOItems " + key + ": " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+            return null;
+        }
+    }
+
     private boolean ensureMmoNbtReflection() {
         if (mmoNbtReflectionTried) return mmoNbtItemClass != null;
         mmoNbtReflectionTried = true;
@@ -1430,11 +1515,18 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
                 Method get = clazz.getMethod("get", ItemStack.class);
                 Method hasType = clazz.getMethod("hasType");
                 Method getType = clazz.getMethod("getType");
+                Method getString = null;
+                try {
+                    getString = clazz.getMethod("getString", String.class);
+                } catch (Throwable ignored) {
+                    // Algunas versiones exponen el tipo sin permitir leer strings arbitrarios.
+                }
 
                 mmoNbtItemClass = clazz;
                 mmoNbtGetMethod = get;
                 mmoNbtHasTypeMethod = hasType;
                 mmoNbtGetTypeMethod = getType;
+                mmoNbtGetStringMethod = getString;
                 debug("NBTItem de MMOItems detectado: " + className);
                 return true;
             } catch (Throwable ignored) {
@@ -1754,6 +1846,35 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             BlockFace.EAST, BlockFace.WEST
     };
 
+
+    private static final class WeaponSwapItemIdentity {
+        final String source;
+        final String type;
+        final String id;
+
+        WeaponSwapItemIdentity(String source, String type, String id) {
+            this.source = source == null ? "" : source.toUpperCase(Locale.ROOT);
+            this.type = type == null ? "" : type.toUpperCase(Locale.ROOT);
+            this.id = id == null ? "" : id.toUpperCase(Locale.ROOT);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof WeaponSwapItemIdentity that)) return false;
+            return source.equals(that.source) && type.equals(that.type) && id.equals(that.id);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(source, type, id);
+        }
+
+        @Override
+        public String toString() {
+            return source + ":" + type + ":" + id;
+        }
+    }
 
     private static final class AutoReloadShot {
         final UUID playerId;

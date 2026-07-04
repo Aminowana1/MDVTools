@@ -110,3 +110,13 @@ mvn clean package
 ```
 
 El `.jar` queda en `target/MDVTools-1.0.5.jar`.
+
+
+## MDVTools 1.0.7
+
+### Weapon swap lock
+
+- Nuevo `weapon-swap-lock.ignore-return-to-same-weapon-after-non-weapon`.
+- Si el jugador cambia de arma a consumible/item no arma y vuelve a la misma arma, no se aplica un bloqueo nuevo.
+- Si vuelve a un arma distinta, el bloqueo se aplica normal.
+- Pensado para permitir tomar una poción/maná y volver al arma principal sin castigar la habilidad.

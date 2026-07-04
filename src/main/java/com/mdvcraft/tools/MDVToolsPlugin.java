@@ -1993,14 +1993,14 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (raw == null) return "";
         String stripped = ChatColor.stripColor(raw);
         String normalized = Normalizer.normalize(stripped, Normalizer.Form.NFD);
-        normalized = normalized.replaceAll("\p{M}", "");
-        return normalized.trim().replaceAll("\s+", " ");
+        normalized = normalized.replaceAll("\\p{M}", "");
+        return normalized.trim().replaceAll("\\s+", " ");
     }
 
     private String normalizeLoose(String raw) {
         String normalized = normalize(raw);
         normalized = normalized.replace('-', ' ').replace('_', ' ');
-        return normalized.trim().replaceAll("\s+", " ");
+        return normalized.trim().replaceAll("\\s+", " ");
     }
 
     private String color(String raw) {

@@ -112,7 +112,7 @@ mvn clean package
 El `.jar` queda en `target/MDVTools-1.0.5.jar`.
 
 
-## MDVTools 1.0.7
+## MDVTools 1.0.8
 
 ### Weapon swap lock
 
@@ -120,3 +120,8 @@ El `.jar` queda en `target/MDVTools-1.0.5.jar`.
 - Si el jugador cambia de arma a consumible/item no arma y vuelve a la misma arma, no se aplica un bloqueo nuevo.
 - Si vuelve a un arma distinta, el bloqueo se aplica normal.
 - Pensado para permitir tomar una poción/maná y volver al arma principal sin castigar la habilidad.
+
+
+## two-handed-ability-lock
+
+Bloquea habilidades de MMOItems/MythicLib cuando el arma principal es de dos manos y la offhand está ocupada. No bloquea ataques básicos ni consumibles; solo cancela el casteo de habilidades. Puede detectar `two-handed` por NBT de MMOItems o por lore configurable como `Dos Manos`.

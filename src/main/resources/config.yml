@@ -1,4 +1,4 @@
-# MDVTools 1.0.7
+# MDVTools 1.0.8
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -268,6 +268,62 @@ weapon-swap-lock:
       enabled: true
       particle: "CRIT"
       amount: 5
+
+
+# Bloqueo real para habilidades de armas a dos manos.
+# Objetivo: si un arma MMOItems tiene two-handed: true / lore de dos manos,
+# no pueda castear habilidades mientras la offhand esté ocupada.
+# Es event-driven y solo revisa cuando se intenta usar una habilidad MMOItems/MythicLib.
+two-handed-ability-lock:
+  enabled: true
+
+  # true = solo aplica a los tipos de MMOItems listados abajo.
+  # Recomendado dejar true para no tocar consumibles ni objetos raros.
+  only-weapon-types: true
+
+  mmoitems-types:
+    - SWORD
+    - DAGGER
+    - AXE
+    - HAMMER
+    - MACE
+    - BOW
+    - CROSSBOW
+    - STAFF
+    - WAND
+    - CATALYST
+    - SPEAR
+    - GREATSWORD
+    - GREATSTAFF
+    - LUTE
+    - TOME
+    - TOMO
+
+  detect:
+    # Intenta leer el stat two-handed desde NBT de MMOItems si la versión lo guarda ahí.
+    mmoitems-stat: true
+    nbt-keys:
+      - MMOITEMS_TWO_HANDED
+      - MMOITEMS_TWO-HANDED
+      - TWO_HANDED
+      - TWO-HANDED
+      - two-handed
+      - two_handed
+
+    # Fallback por lore. Esto es importante porque algunas versiones solo muestran Dos Manos en lore.
+    lore: true
+    lore-lines:
+      - "Dos Manos"
+      - "Dos manos"
+      - "Two Handed"
+      - "Two-Handed"
+      - "two-handed"
+      - "Requiere ambas manos"
+      - "Ambas manos"
+
+  messages:
+    blocked: "&cNecesitas ambas manos libres para usar esta arma."
+    cooldown-ms: 800
 
 # Pasiva para ballestas: recarga automática al impactar.
 # Lee líneas del lore del item. Recomendado:

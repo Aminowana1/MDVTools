@@ -148,12 +148,24 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, WeaponSwapItemIdentity> weaponSwapLastWeaponBeforeNonWeapon = new HashMap<>();
     private final Set<String> weaponSwapLockHookedEvents = new HashSet<>();
 
+    private boolean twoHandedAbilityLockEnabled;
+    private boolean twoHandedAbilityLockOnlyWeaponTypes;
+    private boolean twoHandedAbilityLockUseMmoItemsStat;
+    private boolean twoHandedAbilityLockUseLore;
+    private Set<String> twoHandedAbilityLockMmoTypes = new HashSet<>();
+    private List<String> twoHandedAbilityLockNbtKeys = new ArrayList<>();
+    private List<String> twoHandedAbilityLockLoreKeys = new ArrayList<>();
+    private String twoHandedAbilityLockBlockedMessage;
+    private long twoHandedAbilityLockBlockedMessageCooldownMs;
+    private final Map<UUID, Long> twoHandedAbilityLockLastBlockedMessage = new HashMap<>();
+
     private boolean mmoNbtReflectionTried;
     private Class<?> mmoNbtItemClass;
     private Method mmoNbtGetMethod;
     private Method mmoNbtHasTypeMethod;
     private Method mmoNbtGetTypeMethod;
     private Method mmoNbtGetStringMethod;
+    private Method mmoNbtGetBooleanMethod;
 
     private boolean durabilityEnabled;
     private int durabilityCostBlock;
@@ -189,6 +201,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         weaponSwapLockUntil.clear();
         weaponSwapLockLastBlockedMessage.clear();
         weaponSwapLastWeaponBeforeNonWeapon.clear();
+        twoHandedAbilityLockLastBlockedMessage.clear();
         getLogger().info("MDVTools desactivado.");
     }
 
@@ -250,6 +263,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         loadEquipmentBonusSettings();
         loadCrossbowAutoReloadSettings();
         loadWeaponSwapLockSettings();
+        loadTwoHandedAbilityLockSettings();
         loadCustomDrops();
 
         debug("Config cargada. Mining=" + miningAllowed.size() + ", Logs=" + logsAllowed.size() + ", Crops=" + cropsAllowed.size() + ", AntiGhost=" + antiGhostAllowed.size() + ", CustomDrops=" + customDrops.size());
@@ -375,6 +389,62 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             weaponSwapLockUntil.clear();
             weaponSwapLockLastBlockedMessage.clear();
             weaponSwapLastWeaponBeforeNonWeapon.clear();
+        }
+    }
+
+
+    private void loadTwoHandedAbilityLockSettings() {
+        twoHandedAbilityLockEnabled = getConfig().getBoolean("two-handed-ability-lock.enabled", true);
+        twoHandedAbilityLockOnlyWeaponTypes = getConfig().getBoolean("two-handed-ability-lock.only-weapon-types", true);
+        twoHandedAbilityLockUseMmoItemsStat = getConfig().getBoolean("two-handed-ability-lock.detect.mmoitems-stat", true);
+        twoHandedAbilityLockUseLore = getConfig().getBoolean("two-handed-ability-lock.detect.lore", true);
+
+        twoHandedAbilityLockMmoTypes = new HashSet<>();
+        for (String raw : getConfig().getStringList("two-handed-ability-lock.mmoitems-types")) {
+            if (raw == null) continue;
+            String type = raw.trim().toUpperCase(Locale.ROOT);
+            if (!type.isBlank()) twoHandedAbilityLockMmoTypes.add(type);
+        }
+        if (twoHandedAbilityLockMmoTypes.isEmpty()) {
+            twoHandedAbilityLockMmoTypes.addAll(weaponSwapLockMmoTypes);
+        }
+        if (twoHandedAbilityLockMmoTypes.isEmpty()) {
+            twoHandedAbilityLockMmoTypes.addAll(Arrays.asList(
+                    "SWORD", "DAGGER", "AXE", "HAMMER", "MACE",
+                    "BOW", "CROSSBOW", "STAFF", "WAND", "CATALYST",
+                    "SPEAR", "GREATSWORD", "GREATSTAFF", "LUTE", "TOME", "TOMO"
+            ));
+        }
+
+        twoHandedAbilityLockNbtKeys = new ArrayList<>();
+        for (String raw : getConfig().getStringList("two-handed-ability-lock.detect.nbt-keys")) {
+            if (raw == null) continue;
+            String key = raw.trim();
+            if (!key.isBlank()) twoHandedAbilityLockNbtKeys.add(key);
+        }
+        if (twoHandedAbilityLockNbtKeys.isEmpty()) {
+            twoHandedAbilityLockNbtKeys.addAll(Arrays.asList(
+                    "MMOITEMS_TWO_HANDED", "MMOITEMS_TWO-HANDED",
+                    "TWO_HANDED", "TWO-HANDED", "two-handed", "two_handed"
+            ));
+        }
+
+        twoHandedAbilityLockLoreKeys = new ArrayList<>();
+        for (String raw : getConfig().getStringList("two-handed-ability-lock.detect.lore-lines")) {
+            String normalized = normalizeLoose(raw).toLowerCase(Locale.ROOT);
+            if (!normalized.isBlank()) twoHandedAbilityLockLoreKeys.add(normalized);
+        }
+        if (twoHandedAbilityLockLoreKeys.isEmpty()) {
+            for (String value : Arrays.asList("Dos Manos", "Dos manos", "Two Handed", "Two-Handed", "two-handed", "Requiere ambas manos", "Ambas manos")) {
+                twoHandedAbilityLockLoreKeys.add(normalizeLoose(value).toLowerCase(Locale.ROOT));
+            }
+        }
+
+        twoHandedAbilityLockBlockedMessage = color(getConfig().getString("two-handed-ability-lock.messages.blocked", "&cNecesitas ambas manos libres para usar esta arma."));
+        twoHandedAbilityLockBlockedMessageCooldownMs = Math.max(0L, getConfig().getLong("two-handed-ability-lock.messages.cooldown-ms", 800L));
+
+        if (!twoHandedAbilityLockEnabled) {
+            twoHandedAbilityLockLastBlockedMessage.clear();
         }
     }
 
@@ -581,6 +651,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         UUID id = event.getPlayer().getUniqueId();
         weaponSwapLockUntil.remove(id);
         weaponSwapLockLastBlockedMessage.remove(id);
+        twoHandedAbilityLockLastBlockedMessage.remove(id);
         weaponSwapLastWeaponBeforeNonWeapon.remove(id);
     }
 
@@ -1198,16 +1269,18 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     @SuppressWarnings("unchecked")
     private void registerWeaponSwapLockExternalEvents() {
-        if (!weaponSwapLockEnabled) return;
+        boolean hookMmoItemsAbilities = (weaponSwapLockEnabled && weaponSwapLockBlockMmoItemAbilities) || twoHandedAbilityLockEnabled;
+        boolean hookMythicLibSkills = (weaponSwapLockEnabled && weaponSwapLockBlockMythicLibSkills) || twoHandedAbilityLockEnabled;
+        if (!hookMmoItemsAbilities && !hookMythicLibSkills) return;
 
         // MMOItems dispara este evento para habilidades de item. Cancelarlo evita que la habilidad se castee
         // aunque PlayerInteractEvent ya haya sido cancelado.
-        if (weaponSwapLockBlockMmoItemAbilities) {
+        if (hookMmoItemsAbilities) {
             registerWeaponSwapLockExternalEvent("net.Indyuce.mmoitems.api.event.AbilityUseEvent");
         }
 
         // MythicLib centraliza skills de MMOItems/MMOCore desde versiones modernas.
-        if (weaponSwapLockBlockMythicLibSkills) {
+        if (hookMythicLibSkills) {
             registerWeaponSwapLockExternalEvent("io.lumine.mythic.lib.api.event.skill.PlayerCastSkillEvent");
         }
     }
@@ -1245,12 +1318,19 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
     private void handleWeaponSwapLockExternalAbilityEvent(Event event) {
-        if (!weaponSwapLockEnabled) return;
         if (!(event instanceof Cancellable cancellable)) return;
         if (cancellable.isCancelled()) return;
 
         Player player = extractPlayerFromExternalEvent(event);
         if (player == null) return;
+
+        if (isTwoHandedAbilityBlocked(player)) {
+            cancellable.setCancelled(true);
+            sendTwoHandedAbilityLockBlockedFeedback(player);
+            return;
+        }
+
+        if (!weaponSwapLockEnabled) return;
         if (!isWeaponSwapLocked(player)) return;
 
         ItemStack item = player.getInventory().getItemInMainHand();
@@ -1306,6 +1386,78 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
 
         return null;
+    }
+
+
+    private boolean isTwoHandedAbilityBlocked(Player player) {
+        if (!twoHandedAbilityLockEnabled || player == null) return false;
+        if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return false;
+
+        PlayerInventory inventory = player.getInventory();
+        ItemStack main = inventory.getItemInMainHand();
+        if (main == null || main.getType() == Material.AIR || main.getAmount() <= 0) return false;
+        if (twoHandedAbilityLockOnlyWeaponTypes && !isTwoHandedAbilityLockWeapon(main)) return false;
+        if (!isTwoHandedItem(main)) return false;
+
+        ItemStack offhand = inventory.getItemInOffHand();
+        return offhand != null && offhand.getType() != Material.AIR && offhand.getAmount() > 0;
+    }
+
+    private boolean isTwoHandedAbilityLockWeapon(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) return false;
+
+        String mmoType = readMmoItemTypeId(item);
+        if (mmoType != null && twoHandedAbilityLockMmoTypes.contains(mmoType.toUpperCase(Locale.ROOT))) {
+            return true;
+        }
+
+        return weaponSwapLockFallbackEnabled && weaponSwapLockFallbackMaterials.contains(item.getType());
+    }
+
+    private boolean isTwoHandedItem(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) return false;
+
+        if (twoHandedAbilityLockUseMmoItemsStat) {
+            for (String key : twoHandedAbilityLockNbtKeys) {
+                Boolean booleanValue = readMmoItemBoolean(item, key);
+                if (Boolean.TRUE.equals(booleanValue)) return true;
+
+                String stringValue = readMmoItemStringRaw(item, key);
+                if (isTruthy(stringValue)) return true;
+            }
+        }
+
+        return twoHandedAbilityLockUseLore && hasTwoHandedLore(item);
+    }
+
+    private boolean hasTwoHandedLore(ItemStack item) {
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null || !meta.hasLore() || meta.getLore() == null) return false;
+
+        for (String line : meta.getLore()) {
+            String clean = normalizeLoose(line).toLowerCase(Locale.ROOT);
+            if (clean.isBlank()) continue;
+            for (String key : twoHandedAbilityLockLoreKeys) {
+                if (!key.isBlank() && clean.contains(key)) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTruthy(String raw) {
+        if (raw == null) return false;
+        String value = normalizeLoose(raw).toLowerCase(Locale.ROOT);
+        return value.equals("true") || value.equals("1") || value.equals("yes") || value.equals("si") || value.equals("sí") || value.equals("on");
+    }
+
+    private void sendTwoHandedAbilityLockBlockedFeedback(Player player) {
+        if (player == null || twoHandedAbilityLockBlockedMessage == null || twoHandedAbilityLockBlockedMessage.isBlank()) return;
+        long now = System.currentTimeMillis();
+        UUID id = player.getUniqueId();
+        long last = twoHandedAbilityLockLastBlockedMessage.getOrDefault(id, 0L);
+        if (twoHandedAbilityLockBlockedMessageCooldownMs > 0L && now - last < twoHandedAbilityLockBlockedMessageCooldownMs) return;
+        twoHandedAbilityLockLastBlockedMessage.put(id, now);
+        player.sendMessage(prefix + twoHandedAbilityLockBlockedMessage);
     }
 
     private void handlePossibleWeaponSwap(Player player, ItemStack oldItem, ItemStack newItem) {
@@ -1483,6 +1635,38 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+
+    private Boolean readMmoItemBoolean(ItemStack item, String key) {
+        if (item == null || item.getType() == Material.AIR || key == null || key.isBlank()) return null;
+        if (!ensureMmoNbtReflection() || mmoNbtGetBooleanMethod == null) return null;
+
+        try {
+            Object nbt = mmoNbtGetMethod.invoke(null, item);
+            if (nbt == null) return null;
+            Object value = mmoNbtGetBooleanMethod.invoke(nbt, key);
+            if (value instanceof Boolean bool) return bool;
+            return null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private String readMmoItemStringRaw(ItemStack item, String key) {
+        if (item == null || item.getType() == Material.AIR || key == null || key.isBlank()) return null;
+        if (!ensureMmoNbtReflection() || mmoNbtGetStringMethod == null) return null;
+
+        try {
+            Object nbt = mmoNbtGetMethod.invoke(null, item);
+            if (nbt == null) return null;
+            Object value = mmoNbtGetStringMethod.invoke(nbt, key);
+            if (value == null) return null;
+            String string = String.valueOf(value).trim();
+            return string.isBlank() ? null : string;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private String readMmoItemString(ItemStack item, String key) {
         if (item == null || item.getType() == Material.AIR || key == null || key.isBlank()) return null;
         if (!ensureMmoNbtReflection() || mmoNbtGetStringMethod == null) return null;
@@ -1521,12 +1705,19 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
                 } catch (Throwable ignored) {
                     // Algunas versiones exponen el tipo sin permitir leer strings arbitrarios.
                 }
+                Method getBoolean = null;
+                try {
+                    getBoolean = clazz.getMethod("getBoolean", String.class);
+                } catch (Throwable ignored) {
+                    // Algunas versiones no exponen lectura booleana directa.
+                }
 
                 mmoNbtItemClass = clazz;
                 mmoNbtGetMethod = get;
                 mmoNbtHasTypeMethod = hasType;
                 mmoNbtGetTypeMethod = getType;
                 mmoNbtGetStringMethod = getString;
+                mmoNbtGetBooleanMethod = getBoolean;
                 debug("NBTItem de MMOItems detectado: " + className);
                 return true;
             } catch (Throwable ignored) {
@@ -1802,8 +1993,14 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (raw == null) return "";
         String stripped = ChatColor.stripColor(raw);
         String normalized = Normalizer.normalize(stripped, Normalizer.Form.NFD);
-        normalized = normalized.replaceAll("\\p{M}", "");
-        return normalized.trim().replaceAll("\\s+", " ");
+        normalized = normalized.replaceAll("\p{M}", "");
+        return normalized.trim().replaceAll("\s+", " ");
+    }
+
+    private String normalizeLoose(String raw) {
+        String normalized = normalize(raw);
+        normalized = normalized.replace('-', ' ').replace('_', ' ');
+        return normalized.trim().replaceAll("\s+", " ");
     }
 
     private String color(String raw) {

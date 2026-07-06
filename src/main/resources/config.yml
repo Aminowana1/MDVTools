@@ -272,7 +272,8 @@ weapon-swap-lock:
 
 # Bloqueo real para habilidades de armas a dos manos.
 # Objetivo: si un arma MMOItems tiene two-handed: true / lore de dos manos,
-# no pueda castear habilidades mientras la offhand esté ocupada.
+# no pueda castear habilidades mientras la otra mano esté ocupada.
+# Aplica en ambos sentidos: 2 manos en mainhand + offhand ocupada, o 2 manos en offhand + mainhand ocupada.
 # Es event-driven y solo revisa cuando se intenta usar una habilidad MMOItems/MythicLib.
 # Cobra 1 punto de durabilidad custom de MMOItems cada vez que se castea una habilidad.
 # No muestra mensajes propios: MMOItems sigue manejando su durabilidad/lore.

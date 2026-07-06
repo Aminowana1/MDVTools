@@ -1432,12 +1432,28 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         PlayerInventory inventory = player.getInventory();
         ItemStack main = inventory.getItemInMainHand();
-        if (main == null || main.getType() == Material.AIR || main.getAmount() <= 0) return false;
-        if (twoHandedAbilityLockOnlyWeaponTypes && !isTwoHandedAbilityLockWeapon(main)) return false;
-        if (!isTwoHandedItem(main)) return false;
-
         ItemStack offhand = inventory.getItemInOffHand();
-        return offhand != null && offhand.getType() != Material.AIR && offhand.getAmount() > 0;
+
+        boolean hasMain = isRealItem(main);
+        boolean hasOffhand = isRealItem(offhand);
+        if (!hasMain || !hasOffhand) return false;
+
+        // Caso original: arma de 2 manos en mainhand + cualquier item en offhand.
+        if (isTwoHandedAbilityLockCandidate(main)) return true;
+
+        // Caso inverso: arma de 2 manos en offhand + cualquier item en mainhand.
+        // Esto evita que el jugador esquive el bloqueo moviendo el arma de 2 manos a la offhand.
+        return isTwoHandedAbilityLockCandidate(offhand);
+    }
+
+    private boolean isTwoHandedAbilityLockCandidate(ItemStack item) {
+        if (!isRealItem(item)) return false;
+        if (twoHandedAbilityLockOnlyWeaponTypes && !isTwoHandedAbilityLockWeapon(item)) return false;
+        return isTwoHandedItem(item);
+    }
+
+    private boolean isRealItem(ItemStack item) {
+        return item != null && item.getType() != Material.AIR && item.getAmount() > 0;
     }
 
     private boolean isTwoHandedAbilityLockWeapon(ItemStack item) {

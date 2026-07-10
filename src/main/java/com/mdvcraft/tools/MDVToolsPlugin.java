@@ -37,6 +37,7 @@ import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.inventory.ItemStack;
@@ -48,6 +49,7 @@ import org.bukkit.inventory.meta.CrossbowMeta;
 import org.bukkit.plugin.EventExecutor;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
 import java.io.File;
@@ -218,10 +220,15 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private int tpaInvulnerabilitySeconds;
     private boolean tpaInvulnerabilityCancelOnAttack;
     private boolean tpaAllowCrossWorld;
+    private int tpaTeleportDelaySeconds;
+    private boolean tpaCancelWarmupOnMove;
+    private boolean tpaCancelWarmupOnDamage;
+    private boolean tpaCancelWarmupOnAttack;
     private final Map<UUID, LinkedHashMap<UUID, TpaRequest>> tpaIncoming = new HashMap<>();
     private final Map<UUID, TpaRequest> tpaOutgoing = new HashMap<>();
     private final Map<UUID, Long> tpaCooldownUntil = new HashMap<>();
     private final Map<UUID, Long> tpaInvulnerableUntil = new HashMap<>();
+    private final Map<UUID, TpaWarmup> tpaWarmups = new HashMap<>();
 
 
     @Override
@@ -244,6 +251,10 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         tpaIncoming.clear();
         tpaOutgoing.clear();
         tpaCooldownUntil.clear();
+        for (TpaWarmup warmup : new ArrayList<>(tpaWarmups.values())) {
+            if (warmup.task != null) warmup.task.cancel();
+        }
+        tpaWarmups.clear();
         tpaInvulnerableUntil.clear();
         getLogger().info("MDVTools desactivado.");
     }
@@ -263,6 +274,10 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         tpaInvulnerabilitySeconds = Math.max(0, getConfig().getInt("tpa.invulnerability-after-teleport-seconds", 5));
         tpaInvulnerabilityCancelOnAttack = getConfig().getBoolean("tpa.invulnerability-cancel-on-attack", true);
         tpaAllowCrossWorld = getConfig().getBoolean("tpa.allow-cross-world", true);
+        tpaTeleportDelaySeconds = Math.max(0, getConfig().getInt("tpa.teleport-delay-seconds", 5));
+        tpaCancelWarmupOnMove = getConfig().getBoolean("tpa.cancel-delay-on-move", true);
+        tpaCancelWarmupOnDamage = getConfig().getBoolean("tpa.cancel-delay-on-damage", true);
+        tpaCancelWarmupOnAttack = getConfig().getBoolean("tpa.cancel-delay-on-attack", true);
 
         String tala = getConfig().getString("lore.tala-multiple", "Tala Multiple");
         String rotura = getConfig().getString("lore.rotura-multiple", "Rotura Multiple");
@@ -718,6 +733,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         twoHandedAbilityLockLastBlockedMessage.remove(id);
         weaponSwapLastWeaponBeforeNonWeapon.remove(id);
         removeTpaRequestsFor(id, true);
+        cancelTpaWarmupsFor(id, true);
         tpaCooldownUntil.remove(id);
         tpaInvulnerableUntil.remove(id);
     }
@@ -2291,6 +2307,41 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         return normalized.trim().replaceAll("\\s+", " ");
     }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTpaWarmupMove(PlayerMoveEvent event) {
+        if (!tpaEnabled || !tpaCancelWarmupOnMove || event.getTo() == null) return;
+        TpaWarmup warmup = tpaWarmups.get(event.getPlayer().getUniqueId());
+        if (warmup == null) return;
+
+        Location from = event.getFrom();
+        Location to = event.getTo();
+        if (from.getWorld() == to.getWorld()
+                && from.getX() == to.getX()
+                && from.getY() == to.getY()
+                && from.getZ() == to.getZ()) return;
+
+        cancelTpaWarmup(warmup, "warmup-cancelled-move", "&cEl teletransporte fue cancelado porque te moviste.", true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onTpaWarmupDamage(EntityDamageEvent event) {
+        if (!tpaEnabled || !tpaCancelWarmupOnDamage || !(event.getEntity() instanceof Player player)) return;
+        if (event.getFinalDamage() <= 0.0) return;
+        TpaWarmup warmup = tpaWarmups.get(player.getUniqueId());
+        if (warmup == null) return;
+        cancelTpaWarmup(warmup, "warmup-cancelled-damage", "&cEl teletransporte fue cancelado porque recibiste daño.", true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onTpaWarmupAttack(EntityDamageByEntityEvent event) {
+        if (!tpaEnabled || !tpaCancelWarmupOnAttack) return;
+        Player attacker = getAttackingPlayer(event.getDamager());
+        if (attacker == null) return;
+        TpaWarmup warmup = tpaWarmups.get(attacker.getUniqueId());
+        if (warmup == null) return;
+        cancelTpaWarmup(warmup, "warmup-cancelled-attack", "&cEl teletransporte fue cancelado porque atacaste.", true);
+    }
+
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onTpaTemporaryInvulnerability(EntityDamageEvent event) {
         if (!tpaEnabled || !(event.getEntity() instanceof Player player)) return;
@@ -2475,20 +2526,94 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
 
         removeTpaRequest(request);
+        sendTpa(target, "request-accepted-target", "&aAceptaste la solicitud de &f%player%&a.", Map.of("player", requester.getName()));
+
+        if (tpaTeleportDelaySeconds <= 0) {
+            completeTpaTeleport(requester, target);
+            return true;
+        }
+
+        TpaWarmup previous = tpaWarmups.get(requester.getUniqueId());
+        if (previous != null) cancelTpaWarmup(previous, null, null, false);
+
+        TpaWarmup warmup = new TpaWarmup(requester.getUniqueId(), target.getUniqueId(), requester.getLocation().clone());
+        tpaWarmups.put(requester.getUniqueId(), warmup);
+        sendTpa(requester, "warmup-started", "&eTeletransporte aceptado. No te muevas ni entres en combate durante &f%seconds% segundos&e.", Map.of(
+                "seconds", String.valueOf(tpaTeleportDelaySeconds),
+                "target", target.getName()
+        ));
+        sendTpa(target, "warmup-started-target", "&7%player% se teletransportará hacia ti en &f%seconds% segundos&7.", Map.of(
+                "seconds", String.valueOf(tpaTeleportDelaySeconds),
+                "player", requester.getName()
+        ));
+
+        warmup.task = Bukkit.getScheduler().runTaskLater(this, () -> finishTpaWarmup(warmup), tpaTeleportDelaySeconds * 20L);
+        return true;
+    }
+
+    private void finishTpaWarmup(TpaWarmup warmup) {
+        if (tpaWarmups.get(warmup.requesterId) != warmup) return;
+        tpaWarmups.remove(warmup.requesterId);
+
+        Player requester = Bukkit.getPlayer(warmup.requesterId);
+        Player target = Bukkit.getPlayer(warmup.targetId);
+        if (requester == null || !requester.isOnline()) return;
+        if (target == null || !target.isOnline()) {
+            sendTpa(requester, "target-disconnected", "&cEl jugador objetivo se desconectó.", Map.of());
+            return;
+        }
+        if (!tpaAllowCrossWorld && !target.getWorld().equals(requester.getWorld())) {
+            sendTpa(requester, "cross-world-disabled", "&cNo puedes usar TPA entre mundos distintos.", Map.of());
+            return;
+        }
+        completeTpaTeleport(requester, target);
+    }
+
+    private void completeTpaTeleport(Player requester, Player target) {
         boolean teleported = requester.teleport(target.getLocation());
         if (!teleported) {
             sendTpa(requester, "teleport-failed", "&cNo se pudo completar el teletransporte.", Map.of());
             sendTpa(target, "teleport-failed", "&cNo se pudo completar el teletransporte.", Map.of());
-            return true;
+            return;
         }
 
-        sendTpa(target, "request-accepted-target", "&aAceptaste la solicitud de &f%player%&a.", Map.of("player", requester.getName()));
-        sendTpa(requester, "request-accepted", "&aSolicitud aceptada. Teletransportando...", Map.of("target", target.getName()));
+        sendTpa(requester, "request-accepted", "&aTeletransporte completado.", Map.of("target", target.getName()));
         if (tpaInvulnerabilitySeconds > 0) {
             tpaInvulnerableUntil.put(requester.getUniqueId(), System.currentTimeMillis() + tpaInvulnerabilitySeconds * 1000L);
             sendTpa(requester, "invulnerable", "&aTienes protección temporal durante &f%seconds%s&a.", Map.of("seconds", String.valueOf(tpaInvulnerabilitySeconds)));
         }
-        return true;
+    }
+
+    private void cancelTpaWarmup(TpaWarmup warmup, String messageKey, String fallback, boolean notifyTarget) {
+        if (tpaWarmups.get(warmup.requesterId) != warmup) return;
+        tpaWarmups.remove(warmup.requesterId);
+        if (warmup.task != null) warmup.task.cancel();
+
+        Player requester = Bukkit.getPlayer(warmup.requesterId);
+        Player target = Bukkit.getPlayer(warmup.targetId);
+        if (requester != null && messageKey != null && fallback != null) {
+            sendTpa(requester, messageKey, fallback, Map.of());
+        }
+        if (notifyTarget && target != null) {
+            sendTpa(target, "warmup-cancelled-target", "&7El teletransporte de &f%player% &7fue cancelado.", Map.of(
+                    "player", requester == null ? "un jugador" : requester.getName()
+            ));
+        }
+    }
+
+    private void cancelTpaWarmupsFor(UUID playerId, boolean notifyOther) {
+        TpaWarmup own = tpaWarmups.get(playerId);
+        if (own != null) cancelTpaWarmup(own, null, null, notifyOther);
+
+        for (TpaWarmup warmup : new ArrayList<>(tpaWarmups.values())) {
+            if (!warmup.targetId.equals(playerId)) continue;
+            tpaWarmups.remove(warmup.requesterId, warmup);
+            if (warmup.task != null) warmup.task.cancel();
+            Player requester = Bukkit.getPlayer(warmup.requesterId);
+            if (notifyOther && requester != null) {
+                sendTpa(requester, "target-disconnected", "&cEl jugador objetivo se desconectó.", Map.of());
+            }
+        }
     }
 
     private boolean denyLatestTpa(Player target) {
@@ -2631,6 +2756,19 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             BlockFace.EAST, BlockFace.WEST
     };
 
+
+    private static final class TpaWarmup {
+        final UUID requesterId;
+        final UUID targetId;
+        final Location startLocation;
+        BukkitTask task;
+
+        TpaWarmup(UUID requesterId, UUID targetId, Location startLocation) {
+            this.requesterId = requesterId;
+            this.targetId = targetId;
+            this.startLocation = startLocation;
+        }
+    }
 
     private static final class TpaRequest {
         final UUID senderId;

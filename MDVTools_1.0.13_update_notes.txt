@@ -1,0 +1,25 @@
+MDVTools 1.0.13 - Delay seguro de TPA
+
+Cambios:
+- Tras aceptar una solicitud, el solicitante espera un tiempo configurable antes de teletransportarse.
+- Si se mueve durante la espera, el TPA se cancela.
+- Si recibe daño durante la espera, el TPA se cancela y el daño se aplica normalmente.
+- Si ataca durante la espera, el TPA se cancela.
+- Si el solicitante o el objetivo se desconectan, la espera se cancela.
+- La invulnerabilidad configurada empieza únicamente después de completarse el teletransporte.
+
+Config nueva:
+
+tpa:
+  teleport-delay-seconds: 5
+  cancel-delay-on-move: true
+  cancel-delay-on-damage: true
+  cancel-delay-on-attack: true
+
+Mensajes nuevos dentro de tpa.messages:
+  warmup-started: "&eTeletransporte aceptado. No te muevas ni entres en combate durante &f%seconds% segundos&e."
+  warmup-started-target: "&7%player% se teletransportará hacia ti en &f%seconds% segundos&7."
+  warmup-cancelled-move: "&cEl teletransporte fue cancelado porque te moviste."
+  warmup-cancelled-damage: "&cEl teletransporte fue cancelado porque recibiste daño."
+  warmup-cancelled-attack: "&cEl teletransporte fue cancelado porque atacaste."
+  warmup-cancelled-target: "&7El teletransporte de &f%player% &7fue cancelado."

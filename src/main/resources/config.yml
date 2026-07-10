@@ -389,6 +389,13 @@ tpa:
   enabled: true
   request-timeout-seconds: 60
   cooldown-seconds: 15
+
+  # Espera después de aceptar antes de teletransportar al solicitante.
+  teleport-delay-seconds: 5
+  cancel-delay-on-move: true
+  cancel-delay-on-damage: true
+  cancel-delay-on-attack: true
+
   invulnerability-after-teleport-seconds: 5
   invulnerability-cancel-on-attack: true
   allow-cross-world: true
@@ -404,7 +411,7 @@ tpa:
     request-expired-target: "&7La solicitud de &f%player% &7ha expirado."
     request-denied: "&cSolicitud de teletransporte rechazada."
     request-denied-target: "&eRechazaste la solicitud de &f%player%&e."
-    request-accepted: "&aSolicitud aceptada. Teletransportando..."
+    request-accepted: "&aTeletransporte completado."
     request-accepted-target: "&aAceptaste la solicitud de &f%player%&a."
     request-cancelled: "&eCancelaste tu solicitud de teletransporte."
     request-cancelled-target: "&7%player% canceló su solicitud de teletransporte."
@@ -416,5 +423,11 @@ tpa:
     no-outgoing-request: "&cNo tienes una solicitud enviada pendiente."
     cooldown: "&cDebes esperar &f%seconds%s &cantes de enviar otra solicitud."
     teleport-failed: "&cNo se pudo completar el teletransporte."
+    warmup-started: "&eTeletransporte aceptado. No te muevas ni entres en combate durante &f%seconds% segundos&e."
+    warmup-started-target: "&7%player% se teletransportará hacia ti en &f%seconds% segundos&7."
+    warmup-cancelled-move: "&cEl teletransporte fue cancelado porque te moviste."
+    warmup-cancelled-damage: "&cEl teletransporte fue cancelado porque recibiste daño."
+    warmup-cancelled-attack: "&cEl teletransporte fue cancelado porque atacaste."
+    warmup-cancelled-target: "&7El teletransporte de &f%player% &7fue cancelado."
     invulnerable: "&aTienes protección temporal durante &f%seconds%s&a."
     invulnerability-ended-on-attack: "&cTu protección temporal terminó al atacar."

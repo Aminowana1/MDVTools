@@ -1,0 +1,14 @@
+MDVTools 1.0.12 - Botones TPA específicos y expiración configurable
+
+Cambios:
+- Cada botón [ACEPTAR] y [RECHAZAR] queda ligado a la solicitud exacta que generó ese mensaje.
+- Los botones usan internamente el UUID del solicitante y validan que la solicitud siga activa y pertenezca al receptor.
+- /tpa aceptar, /tpaccept, /tpa rechazar y /tpdeny siguen actuando sobre la solicitud válida más reciente.
+- Cada solicitud expira según `tpa.request-timeout-seconds`.
+- Los mensajes de envío y recepción admiten `%seconds%` para mostrar el tiempo de expiración.
+- Nuevo mensaje opcional: `tpa.messages.request-not-valid`.
+
+Actualización desde 1.0.11:
+- Reemplazar el JAR.
+- No es obligatorio borrar config.yml.
+- Opcionalmente actualizar los mensajes request-sent/request-received y añadir request-not-valid.

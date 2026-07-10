@@ -1,4 +1,4 @@
-# MDVTools 1.0.9
+# MDVTools 1.0.11
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -379,3 +379,42 @@ crossbow-auto-reload:
     enabled: true
     particle: "CRIT"
     amount: 8
+
+
+# ==========================================================
+# TPA simple de MDVTools
+# Reemplaza el flujo de Essentials con botones clickeables.
+# ==========================================================
+tpa:
+  enabled: true
+  request-timeout-seconds: 60
+  cooldown-seconds: 15
+  invulnerability-after-teleport-seconds: 5
+  invulnerability-cancel-on-attack: true
+  allow-cross-world: true
+
+  messages:
+    disabled: "&cEl sistema de TPA está desactivado."
+    player-not-found: "&cJugador no encontrado o desconectado."
+    cannot-self: "&cNo puedes enviarte una solicitud a ti mismo."
+    cross-world-disabled: "&cNo puedes usar TPA entre mundos distintos."
+    request-sent: "&eSolicitud de teletransporte enviada a &6%target%&e. &7Expira en &f%seconds% segundos&7."
+    request-received: "&6%player% &equiere teletransportarse hacia ti. &7Expira en &f%seconds% segundos&7."
+    request-expired: "&cLa solicitud de teletransporte ha expirado."
+    request-expired-target: "&7La solicitud de &f%player% &7ha expirado."
+    request-denied: "&cSolicitud de teletransporte rechazada."
+    request-denied-target: "&eRechazaste la solicitud de &f%player%&e."
+    request-accepted: "&aSolicitud aceptada. Teletransportando..."
+    request-accepted-target: "&aAceptaste la solicitud de &f%player%&a."
+    request-cancelled: "&eCancelaste tu solicitud de teletransporte."
+    request-cancelled-target: "&7%player% canceló su solicitud de teletransporte."
+    request-cancelled-disconnect: "&7La solicitud fue cancelada porque el jugador se desconectó."
+    target-disconnected: "&cEl jugador objetivo se desconectó."
+    requester-offline: "&cEl jugador que envió la solicitud ya no está conectado."
+    no-pending-request: "&cNo tienes solicitudes de teletransporte pendientes."
+    request-not-valid: "&cEsa solicitud ya no es válida o ha expirado."
+    no-outgoing-request: "&cNo tienes una solicitud enviada pendiente."
+    cooldown: "&cDebes esperar &f%seconds%s &cantes de enviar otra solicitud."
+    teleport-failed: "&cNo se pudo completar el teletransporte."
+    invulnerable: "&aTienes protección temporal durante &f%seconds%s&a."
+    invulnerability-ended-on-attack: "&cTu protección temporal terminó al atacar."

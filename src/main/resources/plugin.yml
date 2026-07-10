@@ -1,16 +1,38 @@
 name: MDVTools
-version: 1.0.10
+version: 1.0.12
 main: com.mdvcraft.tools.MDVToolsPlugin
 api-version: '1.21'
 author: MDVCRAFT
 description: Herramientas de profesión para MDVCRAFT.
-softdepend: [MDVHeadOres, MMOItems, MythicLib]
+softdepend: [MDVHeadOres, MMOItems, MythicLib, Essentials]
 commands:
+  tpa:
+    description: Solicita teletransportarte hacia otro jugador.
+    usage: /tpa <jugador|aceptar|rechazar|cancelar>
+    permission: mdvtools.tpa
+  tpaccept:
+    description: Acepta la solicitud TPA más reciente.
+    permission: mdvtools.tpa
+  tpdeny:
+    description: Rechaza la solicitud TPA más reciente.
+    permission: mdvtools.tpa
+  aceptartp:
+    description: Alias para aceptar TPA.
+    permission: mdvtools.tpa
+  rechazartp:
+    description: Alias para rechazar TPA.
+    permission: mdvtools.tpa
+  tpacancel:
+    description: Cancela la solicitud TPA enviada.
+    permission: mdvtools.tpa
   mdvtools:
     description: Comandos administrativos de MDVTools.
     usage: /mdvtools reload
     permission: mdvtools.admin
 permissions:
+  mdvtools.tpa:
+    description: Permite usar el sistema TPA de MDVTools.
+    default: true
   mdvtools.admin:
     description: Permite recargar MDVTools.
     default: op

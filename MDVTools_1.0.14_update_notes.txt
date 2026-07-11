@@ -1,0 +1,25 @@
+MDVTools 1.0.14
+=================
+
+Nuevo módulo: identificación probabilística de MMOItems.
+
+- Reconoce pergaminos por TYPE + ID interno de MMOItems.
+- Permite configurar probabilidad de éxito por pergamino.
+- Limita cada pergamino por tier máximo.
+- Consume una unidad de forma configurable en éxito, fallo o tier denegado.
+- Usa el objeto no identificado real almacenado por MMOItems y lo revela sin regenerarlo.
+- No lee tags desde el lore; el lore es solo visual.
+- No requiere borrar la carpeta de MDVTools.
+
+IMPORTANTE
+----------
+Los pergaminos manejados por MDVTools NO deben tener `can-identify: true`.
+Esa opción activa la identificación nativa de MMOItems, que siempre tiene éxito.
+
+Migración
+---------
+1. Reemplaza solamente el JAR/source por 1.0.14.
+2. Conserva la carpeta plugins/MDVTools.
+3. Añade manualmente el bloque `identification:` del config.yml nuevo a tu config existente.
+4. Crea el consumible MMOItems `PERGAMINO_IDENTIFICACION_COMUN` sin `can-identify`.
+5. Ejecuta /mi reload y /mdvtools reload.

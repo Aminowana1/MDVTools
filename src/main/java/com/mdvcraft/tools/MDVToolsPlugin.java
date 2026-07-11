@@ -34,6 +34,8 @@ import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.event.inventory.InventoryAction;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
@@ -133,6 +135,22 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, AutoReloadShot> autoReloadProjectiles = new HashMap<>();
     private final Map<UUID, Long> autoReloadCooldowns = new HashMap<>();
 
+    private boolean identificationEnabled;
+    private boolean identificationAllowItemsWithoutTier;
+    private final List<String> identificationTierOrder = new ArrayList<>();
+    private final Map<String, IdentificationScrollDefinition> identificationScrolls = new HashMap<>();
+    private final Map<InventoryClickEvent, ItemStack> identificationSuppressedTargets = new IdentityHashMap<>();
+    private String identificationMessageSuccess;
+    private String identificationMessageFailure;
+    private String identificationMessageTierTooHigh;
+    private String identificationMessageInvalidTarget;
+    private String identificationMessageStackedTarget;
+    private String identificationMessageNoTier;
+    private String identificationMessageInternalError;
+    private IdentificationSound identificationSuccessSound = new IdentificationSound();
+    private IdentificationSound identificationFailureSound = new IdentificationSound();
+    private IdentificationSound identificationDeniedSound = new IdentificationSound();
+
     private boolean weaponSwapLockEnabled;
     private long weaponSwapLockDurationMs;
     private boolean weaponSwapLockOnlyWhenNewItemIsWeapon;
@@ -185,6 +203,10 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private Method mmoNbtGetBooleanMethod;
     private Method mmoNbtGetIntegerMethod;
     private Method mmoNbtHasTagMethod;
+
+    private boolean mmoIdentificationReflectionTried;
+    private Constructor<?> mmoIdentifiedItemConstructor;
+    private Method mmoIdentifiedItemIdentifyMethod;
 
     private boolean mmoDurabilityReflectionTried;
     private Constructor<?> mmoDurabilityConstructorItemStack;
@@ -248,6 +270,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         weaponSwapLastWeaponBeforeNonWeapon.clear();
         twoHandedAbilityLockLastBlockedMessage.clear();
         abilityDurabilityLastCharge.clear();
+        identificationSuppressedTargets.clear();
         tpaIncoming.clear();
         tpaOutgoing.clear();
         tpaCooldownUntil.clear();
@@ -326,6 +349,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
 
         loadEquipmentBonusSettings();
+        loadIdentificationSettings();
         loadCrossbowAutoReloadSettings();
         loadWeaponSwapLockSettings();
         loadTwoHandedAbilityLockSettings();
@@ -365,6 +389,73 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+
+    private void loadIdentificationSettings() {
+        identificationEnabled = getConfig().getBoolean("identification.enabled", true);
+        identificationAllowItemsWithoutTier = getConfig().getBoolean("identification.allow-items-without-tier", false);
+
+        identificationTierOrder.clear();
+        for (String raw : getConfig().getStringList("identification.tier-order")) {
+            if (raw == null) continue;
+            String tier = raw.trim().toUpperCase(Locale.ROOT);
+            if (!tier.isBlank() && !identificationTierOrder.contains(tier)) identificationTierOrder.add(tier);
+        }
+        if (identificationTierOrder.isEmpty()) {
+            identificationTierOrder.addAll(Arrays.asList("COMUN", "ESPECIAL", "RARO", "EPICO", "LEGENDARIO"));
+        }
+
+        identificationScrolls.clear();
+        ConfigurationSection scrolls = getConfig().getConfigurationSection("identification.scrolls");
+        if (scrolls != null) {
+            for (String itemIdRaw : scrolls.getKeys(false)) {
+                ConfigurationSection cfg = scrolls.getConfigurationSection(itemIdRaw);
+                if (cfg == null) continue;
+
+                IdentificationScrollDefinition definition = new IdentificationScrollDefinition();
+                definition.itemId = itemIdRaw.trim().toUpperCase(Locale.ROOT);
+                definition.typeId = cfg.getString("type", "CONSUMABLE").trim().toUpperCase(Locale.ROOT);
+                definition.chance = Math.max(0.0, Math.min(100.0, cfg.getDouble("chance", 100.0)));
+                definition.maximumTier = cfg.getString("maximum-tier", "ANY").trim().toUpperCase(Locale.ROOT);
+                definition.consumeOnSuccess = cfg.getBoolean("consume-on-success", true);
+                definition.consumeOnFailure = cfg.getBoolean("consume-on-failure", true);
+                definition.consumeOnDenied = cfg.getBoolean("consume-on-denied", false);
+
+                if (definition.itemId.isBlank() || definition.typeId.isBlank()) {
+                    getLogger().warning("Pergamino inválido en identification.scrolls: " + itemIdRaw);
+                    continue;
+                }
+                if (!definition.maximumTier.equals("ANY") && !definition.maximumTier.equals("*")
+                        && !identificationTierOrder.contains(definition.maximumTier)) {
+                    getLogger().warning("maximum-tier desconocido para " + definition.itemId + ": " + definition.maximumTier);
+                }
+
+                identificationScrolls.put(identificationScrollKey(definition.typeId, definition.itemId), definition);
+            }
+        }
+
+        identificationMessageSuccess = color(getConfig().getString("identification.messages.success", "&aHas identificado correctamente el objeto."));
+        identificationMessageFailure = color(getConfig().getString("identification.messages.failure", "&cEl pergamino se deshizo sin revelar el objeto."));
+        identificationMessageTierTooHigh = color(getConfig().getString("identification.messages.tier-too-high", "&cEste pergamino no tiene poder suficiente para identificar un objeto de tier &f{tier}&c."));
+        identificationMessageInvalidTarget = color(getConfig().getString("identification.messages.invalid-target", "&cSolo puedes usar este pergamino sobre un objeto no identificado."));
+        identificationMessageStackedTarget = color(getConfig().getString("identification.messages.stacked-target", "&cSepara los objetos apilados antes de identificarlos."));
+        identificationMessageNoTier = color(getConfig().getString("identification.messages.no-tier", "&cEste objeto no tiene un tier reconocible."));
+        identificationMessageInternalError = color(getConfig().getString("identification.messages.internal-error", "&cNo se pudo revelar el objeto. Revisa la consola."));
+
+        identificationSuccessSound = loadIdentificationSound("identification.sounds.success", true, "entity.player.levelup", 0.8f, 1.6f);
+        identificationFailureSound = loadIdentificationSound("identification.sounds.failure", true, "block.fire.extinguish", 0.7f, 0.8f);
+        identificationDeniedSound = loadIdentificationSound("identification.sounds.denied", true, "block.note_block.bass", 0.6f, 0.7f);
+
+        debug("Identificación cargada. Pergaminos=" + identificationScrolls.size() + ", tiers=" + identificationTierOrder);
+    }
+
+    private IdentificationSound loadIdentificationSound(String path, boolean defaultEnabled, String defaultValue, float defaultVolume, float defaultPitch) {
+        IdentificationSound sound = new IdentificationSound();
+        sound.enabled = getConfig().getBoolean(path + ".enabled", defaultEnabled);
+        sound.value = getConfig().getString(path + ".value", defaultValue);
+        sound.volume = (float) getConfig().getDouble(path + ".volume", defaultVolume);
+        sound.pitch = (float) getConfig().getDouble(path + ".pitch", defaultPitch);
+        return sound;
+    }
 
     private void loadCrossbowAutoReloadSettings() {
         crossbowAutoReloadEnabled = getConfig().getBoolean("crossbow-auto-reload.enabled", true);
@@ -650,6 +741,223 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
 
 
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onIdentificationScrollUse(InventoryClickEvent event) {
+        if (!identificationEnabled || identificationScrolls.isEmpty()) return;
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        if (event.getAction() != InventoryAction.SWAP_WITH_CURSOR) return;
+        if (event.getClickedInventory() != player.getInventory()) return;
+
+        ItemStack cursor = event.getCursor();
+        IdentificationScrollDefinition scroll = getIdentificationScroll(cursor);
+        if (scroll == null) return;
+
+        ItemStack target = event.getCurrentItem();
+        if (target == null || target.getType() == Material.AIR) return;
+
+        // MDVTools controla completamente este gesto. El pergamino NO debe tener can-identify: true,
+        // porque la identificación nativa de MMOItems siempre tiene éxito.
+        event.setCancelled(true);
+
+        if (!hasMmoItemTag(target, "MMOITEMS_UNIDENTIFIED_ITEM")) {
+            sendIdentificationMessage(player, identificationMessageInvalidTarget, scroll, null);
+            playIdentificationSound(player, identificationDeniedSound);
+            suppressNativeIdentificationIfNeeded(event, target);
+            scheduleInventoryRefresh(player);
+            return;
+        }
+
+        if (target.getAmount() > 1) {
+            sendIdentificationMessage(player, identificationMessageStackedTarget, scroll, null);
+            playIdentificationSound(player, identificationDeniedSound);
+            suppressNativeIdentificationIfNeeded(event, target);
+            scheduleInventoryRefresh(player);
+            return;
+        }
+
+        ItemStack identified = identifyMmoItem(target);
+        if (identified == null || identified.getType() == Material.AIR) {
+            sendIdentificationMessage(player, identificationMessageInternalError, scroll, null);
+            playIdentificationSound(player, identificationDeniedSound);
+            getLogger().warning("No pude deserializar un objeto no identificado para " + player.getName() + ".");
+            suppressNativeIdentificationIfNeeded(event, target);
+            scheduleInventoryRefresh(player);
+            return;
+        }
+
+        String tier = readMmoItemString(identified, "MMOITEMS_TIER");
+        if ((tier == null || tier.isBlank()) && !identificationAllowItemsWithoutTier) {
+            if (scroll.consumeOnDenied) consumeIdentificationScroll(event);
+            sendIdentificationMessage(player, identificationMessageNoTier, scroll, null);
+            playIdentificationSound(player, identificationDeniedSound);
+            suppressNativeIdentificationIfNeeded(event, target);
+            scheduleInventoryRefresh(player);
+            return;
+        }
+
+        if (tier != null && !isIdentificationTierAllowed(tier, scroll.maximumTier)) {
+            if (scroll.consumeOnDenied) consumeIdentificationScroll(event);
+            sendIdentificationMessage(player, identificationMessageTierTooHigh, scroll, tier);
+            playIdentificationSound(player, identificationDeniedSound);
+            suppressNativeIdentificationIfNeeded(event, target);
+            scheduleInventoryRefresh(player);
+            return;
+        }
+
+        boolean success = scroll.chance >= 100.0 || (scroll.chance > 0.0 && ThreadLocalRandom.current().nextDouble(100.0) < scroll.chance);
+        if (!success) {
+            if (scroll.consumeOnFailure) consumeIdentificationScroll(event);
+            sendIdentificationMessage(player, identificationMessageFailure, scroll, tier);
+            playIdentificationSound(player, identificationFailureSound);
+            suppressNativeIdentificationIfNeeded(event, target);
+            scheduleInventoryRefresh(player);
+            return;
+        }
+
+        if (scroll.consumeOnSuccess) consumeIdentificationScroll(event);
+        identified.setAmount(1);
+        event.setCurrentItem(identified);
+        sendIdentificationMessage(player, identificationMessageSuccess, scroll, tier);
+        playIdentificationSound(player, identificationSuccessSound);
+        scheduleInventoryRefresh(player);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = false)
+    public void restoreIdentificationTargetAfterNativeListeners(InventoryClickEvent event) {
+        ItemStack restore = identificationSuppressedTargets.remove(event);
+        if (restore != null) event.setCurrentItem(restore);
+    }
+
+    private void suppressNativeIdentificationIfNeeded(InventoryClickEvent event, ItemStack target) {
+        if (event == null || target == null) return;
+        if (!Boolean.TRUE.equals(readMmoItemBoolean(event.getCursor(), "MMOITEMS_CAN_IDENTIFY"))) return;
+
+        // Algunas configuraciones antiguas pueden conservar can-identify: true.
+        // Ocultamos el objetivo solo durante el resto de este evento para impedir que
+        // MMOItems aplique después su identificación nativa garantizada.
+        identificationSuppressedTargets.put(event, target.clone());
+        event.setCurrentItem(null);
+    }
+
+    private IdentificationScrollDefinition getIdentificationScroll(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) return null;
+        String typeId = readMmoItemTypeId(item);
+        String itemId = readMmoItemString(item, "MMOITEMS_ITEM_ID");
+        if (typeId == null || itemId == null) return null;
+        return identificationScrolls.get(identificationScrollKey(typeId, itemId));
+    }
+
+    private String identificationScrollKey(String typeId, String itemId) {
+        return (typeId == null ? "" : typeId.trim().toUpperCase(Locale.ROOT)) + ":"
+                + (itemId == null ? "" : itemId.trim().toUpperCase(Locale.ROOT));
+    }
+
+    private boolean isIdentificationTierAllowed(String itemTier, String maximumTier) {
+        if (maximumTier == null || maximumTier.isBlank() || maximumTier.equalsIgnoreCase("ANY") || maximumTier.equals("*")) return true;
+        int itemIndex = identificationTierOrder.indexOf(itemTier.toUpperCase(Locale.ROOT));
+        int maximumIndex = identificationTierOrder.indexOf(maximumTier.toUpperCase(Locale.ROOT));
+        return itemIndex >= 0 && maximumIndex >= 0 && itemIndex <= maximumIndex;
+    }
+
+    private void consumeIdentificationScroll(InventoryClickEvent event) {
+        ItemStack cursor = event.getCursor();
+        if (cursor == null || cursor.getType() == Material.AIR || cursor.getAmount() <= 0) return;
+        if (cursor.getAmount() <= 1) {
+            event.getView().setCursor(null);
+        } else {
+            ItemStack remaining = cursor.clone();
+            remaining.setAmount(cursor.getAmount() - 1);
+            event.getView().setCursor(remaining);
+        }
+    }
+
+    private void sendIdentificationMessage(Player player, String message, IdentificationScrollDefinition scroll, String tier) {
+        if (player == null || message == null || message.isBlank()) return;
+        String rendered = message
+                .replace("{chance}", formatChance(scroll == null ? 0.0 : scroll.chance))
+                .replace("{maximum-tier}", scroll == null ? "" : scroll.maximumTier)
+                .replace("{tier}", tier == null ? "DESCONOCIDO" : tier);
+        player.sendMessage(prefix + rendered);
+    }
+
+    private String formatChance(double chance) {
+        if (Math.rint(chance) == chance) return String.valueOf((int) chance);
+        return String.format(Locale.US, "%.2f", chance).replaceAll("0+$", "").replaceAll("\\.$", "");
+    }
+
+    private void playIdentificationSound(Player player, IdentificationSound configured) {
+        if (player == null || configured == null || !configured.enabled || configured.value == null || configured.value.isBlank()) return;
+        try {
+            player.playSound(player.getLocation(), configured.value, configured.volume, configured.pitch);
+        } catch (Throwable first) {
+            try {
+                Sound sound = Sound.valueOf(configured.value.toUpperCase(Locale.ROOT).replace('.', '_'));
+                player.playSound(player.getLocation(), sound, configured.volume, configured.pitch);
+            } catch (Throwable ignored) {
+                if (debug) getLogger().warning("Sonido inválido para identificación: " + configured.value);
+            }
+        }
+    }
+
+    private void scheduleInventoryRefresh(Player player) {
+        Bukkit.getScheduler().runTask(this, player::updateInventory);
+    }
+
+    private boolean hasMmoItemTag(ItemStack item, String key) {
+        if (item == null || item.getType() == Material.AIR || key == null || key.isBlank()) return false;
+        if (!ensureMmoNbtReflection()) return false;
+        try {
+            Object nbt = mmoNbtGetMethod.invoke(null, item);
+            if (nbt == null) return false;
+            if (mmoNbtHasTagMethod != null) {
+                Object result = mmoNbtHasTagMethod.invoke(nbt, key);
+                return result instanceof Boolean bool && bool;
+            }
+            String raw = readMmoItemStringRaw(item, key);
+            return raw != null && !raw.isBlank();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private ItemStack identifyMmoItem(ItemStack unidentified) {
+        if (!ensureMmoIdentificationReflection()) return null;
+        try {
+            Object nbt = mmoNbtGetMethod.invoke(null, unidentified);
+            if (nbt == null) return null;
+            Object wrapper = mmoIdentifiedItemConstructor.newInstance(nbt);
+            Object result = mmoIdentifiedItemIdentifyMethod.invoke(wrapper);
+            return result instanceof ItemStack stack ? stack.clone() : null;
+        } catch (Throwable throwable) {
+            if (debug) getLogger().warning("Error identificando objeto MMOItems: " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+            return null;
+        }
+    }
+
+    private boolean ensureMmoIdentificationReflection() {
+        if (mmoIdentificationReflectionTried) return mmoIdentifiedItemConstructor != null && mmoIdentifiedItemIdentifyMethod != null;
+        mmoIdentificationReflectionTried = true;
+        if (!ensureMmoNbtReflection()) return false;
+
+        try {
+            Class<?> identifiedClass = Class.forName("net.Indyuce.mmoitems.api.item.util.identify.IdentifiedItem");
+            for (Constructor<?> constructor : identifiedClass.getConstructors()) {
+                Class<?>[] parameters = constructor.getParameterTypes();
+                if (parameters.length == 1 && parameters[0].isAssignableFrom(mmoNbtItemClass)) {
+                    mmoIdentifiedItemConstructor = constructor;
+                    break;
+                }
+            }
+            if (mmoIdentifiedItemConstructor == null) return false;
+            mmoIdentifiedItemIdentifyMethod = identifiedClass.getMethod("identify");
+            debug("Sistema IdentifiedItem de MMOItems detectado.");
+            return true;
+        } catch (Throwable throwable) {
+            if (debug) getLogger().warning("No pude conectar con IdentifiedItem de MMOItems: " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+            return false;
+        }
+    }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onWeaponSwapHotbar(PlayerItemHeldEvent event) {
@@ -2756,6 +3064,23 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             BlockFace.EAST, BlockFace.WEST
     };
 
+
+    private static final class IdentificationScrollDefinition {
+        String typeId;
+        String itemId;
+        double chance;
+        String maximumTier;
+        boolean consumeOnSuccess;
+        boolean consumeOnFailure;
+        boolean consumeOnDenied;
+    }
+
+    private static final class IdentificationSound {
+        boolean enabled;
+        String value;
+        float volume;
+        float pitch;
+    }
 
     private static final class TpaWarmup {
         final UUID requesterId;

@@ -1,4 +1,13 @@
-# MDVTools 1.0.5
+# MDVTools 1.0.14
+
+## MDVTools 1.0.14 - Identificación probabilística
+
+Añade pergaminos configurables para revelar objetos no identificados de MMOItems con probabilidad de éxito y tier máximo. El sistema reconoce los pergaminos por su TYPE + ID interno; el lore es solamente visual.
+
+Los pergaminos de este módulo **no deben usar `can-identify: true`**, porque esa opción activa la identificación nativa garantizada de MMOItems.
+
+Si ya existe una carpeta `plugins/MDVTools`, no se borra: se añade manualmente el bloque `identification:` del `config.yml` incluido y se ejecuta `/mdvtools reload`.
+
 
 Herramientas de profesión para MDVCRAFT.
 
@@ -109,7 +118,7 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.5.jar`.
+El `.jar` queda en `target/MDVTools-1.0.14.jar`.
 
 
 ## MDVTools 1.0.9

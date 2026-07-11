@@ -1,0 +1,14 @@
+PERGAMINO_IDENTIFICACION_COMUN:
+  base:
+    material: PAPER
+    name: '&aPergamino de Identificación Común'
+    tier: COMUN
+    lore:
+      - '&7Probabilidad de identificación: &e65%'
+      - '&7Puede identificar hasta objetos &acomunes.'
+      - '&8'
+      - '&eArrástralo sobre un objeto desconocido.'
+    inedible: true
+
+# IMPORTANTE: no agregues can-identify: true.
+# MDVTools controla la tirada, el tier máximo y el consumo del pergamino.

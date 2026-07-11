@@ -1,0 +1,22 @@
+MIGRACIÓN MDVTOOLS 1.0.14
+========================
+
+NO borres plugins/MDVTools ni sus archivos.
+
+1. Detén el servidor.
+2. Reemplaza únicamente el JAR anterior por MDVTools-1.0.14.jar.
+3. Abre plugins/MDVTools/config.yml.
+4. Copia al final el contenido de MDVTools_1.0.14_config_addition.yml.
+5. Crea el MMOItem CONSUMABLE/PERGAMINO_IDENTIFICACION_COMUN usando el ejemplo incluido.
+6. No añadas `can-identify: true` al pergamino.
+7. Inicia el servidor o ejecuta, en este orden:
+   /mi reload
+   /mdvtools reload
+
+PRUEBA RECOMENDADA
+------------------
+- Usa /mi item unidentify sobre un objeto COMUN.
+- Arrastra el pergamino encima.
+- Con chance 65, el éxito revela el mismo objeto guardado por MMOItems.
+- El fallo conserva el objeto desconocido y consume una unidad.
+- Intenta usarlo sobre un objeto ESPECIAL/RARO: debe rechazarlo sin consumirlo.

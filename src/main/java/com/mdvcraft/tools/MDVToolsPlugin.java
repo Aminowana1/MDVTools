@@ -243,6 +243,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private boolean tpaInvulnerabilityCancelOnAttack;
     private boolean tpaAllowCrossWorld;
     private int tpaTeleportDelaySeconds;
+    private int tpaMovementGraceSeconds;
     private boolean tpaCancelWarmupOnMove;
     private boolean tpaCancelWarmupOnDamage;
     private boolean tpaCancelWarmupOnAttack;
@@ -297,7 +298,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         tpaInvulnerabilitySeconds = Math.max(0, getConfig().getInt("tpa.invulnerability-after-teleport-seconds", 5));
         tpaInvulnerabilityCancelOnAttack = getConfig().getBoolean("tpa.invulnerability-cancel-on-attack", true);
         tpaAllowCrossWorld = getConfig().getBoolean("tpa.allow-cross-world", true);
-        tpaTeleportDelaySeconds = Math.max(0, getConfig().getInt("tpa.teleport-delay-seconds", 5));
+        tpaTeleportDelaySeconds = Math.max(0, getConfig().getInt("tpa.teleport-delay-seconds", 4));
+        tpaMovementGraceSeconds = Math.min(
+                tpaTeleportDelaySeconds,
+                Math.max(0, getConfig().getInt("tpa.movement-grace-seconds", 1))
+        );
         tpaCancelWarmupOnMove = getConfig().getBoolean("tpa.cancel-delay-on-move", true);
         tpaCancelWarmupOnDamage = getConfig().getBoolean("tpa.cancel-delay-on-damage", true);
         tpaCancelWarmupOnAttack = getConfig().getBoolean("tpa.cancel-delay-on-attack", true);
@@ -2621,6 +2626,10 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         TpaWarmup warmup = tpaWarmups.get(event.getPlayer().getUniqueId());
         if (warmup == null) return;
 
+        // Durante el breve margen inicial el jugador puede terminar de detenerse
+        // y leer que la solicitud fue aceptada sin cancelar accidentalmente el TPA.
+        if (System.currentTimeMillis() < warmup.movementLockedFromMs) return;
+
         Location from = event.getFrom();
         Location to = event.getTo();
         if (from.getWorld() == to.getWorld()
@@ -2844,12 +2853,24 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         TpaWarmup previous = tpaWarmups.get(requester.getUniqueId());
         if (previous != null) cancelTpaWarmup(previous, null, null, false);
 
-        TpaWarmup warmup = new TpaWarmup(requester.getUniqueId(), target.getUniqueId(), requester.getLocation().clone());
+        long movementLockedFromMs = System.currentTimeMillis() + tpaMovementGraceSeconds * 1000L;
+        TpaWarmup warmup = new TpaWarmup(
+                requester.getUniqueId(),
+                target.getUniqueId(),
+                requester.getLocation().clone(),
+                movementLockedFromMs
+        );
         tpaWarmups.put(requester.getUniqueId(), warmup);
-        sendTpa(requester, "warmup-started", "&eTeletransporte aceptado. No te muevas ni entres en combate durante &f%seconds% segundos&e.", Map.of(
-                "seconds", String.valueOf(tpaTeleportDelaySeconds),
-                "target", target.getName()
-        ));
+
+        int movementLockSeconds = Math.max(0, tpaTeleportDelaySeconds - tpaMovementGraceSeconds);
+        sendTpa(requester, "warmup-started",
+                "&eTeletransporte aceptado. Tienes &f%grace_seconds%s &epara detenerte; después no te muevas durante &f%movement_lock_seconds%s&e. Entrar en combate cancela la espera.",
+                Map.of(
+                        "seconds", String.valueOf(tpaTeleportDelaySeconds),
+                        "grace_seconds", String.valueOf(tpaMovementGraceSeconds),
+                        "movement_lock_seconds", String.valueOf(movementLockSeconds),
+                        "target", target.getName()
+                ));
         sendTpa(target, "warmup-started-target", "&7%player% se teletransportará hacia ti en &f%seconds% segundos&7.", Map.of(
                 "seconds", String.valueOf(tpaTeleportDelaySeconds),
                 "player", requester.getName()
@@ -3086,12 +3107,14 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         final UUID requesterId;
         final UUID targetId;
         final Location startLocation;
+        final long movementLockedFromMs;
         BukkitTask task;
 
-        TpaWarmup(UUID requesterId, UUID targetId, Location startLocation) {
+        TpaWarmup(UUID requesterId, UUID targetId, Location startLocation, long movementLockedFromMs) {
             this.requesterId = requesterId;
             this.targetId = targetId;
             this.startLocation = startLocation;
+            this.movementLockedFromMs = movementLockedFromMs;
         }
     }
 

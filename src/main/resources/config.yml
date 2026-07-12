@@ -1,4 +1,4 @@
-# MDVTools 1.0.14
+# MDVTools 1.0.15
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -447,8 +447,13 @@ tpa:
   request-timeout-seconds: 60
   cooldown-seconds: 15
 
-  # Espera después de aceptar antes de teletransportar al solicitante.
-  teleport-delay-seconds: 5
+  # Espera total después de aceptar antes de teletransportar al solicitante.
+  teleport-delay-seconds: 4
+
+  # Durante este margen inicial el jugador todavía puede moverse.
+  # Con 4 segundos totales y 1 de gracia, quedan 3 segundos inmóvil.
+  movement-grace-seconds: 1
+
   cancel-delay-on-move: true
   cancel-delay-on-damage: true
   cancel-delay-on-attack: true
@@ -480,7 +485,7 @@ tpa:
     no-outgoing-request: "&cNo tienes una solicitud enviada pendiente."
     cooldown: "&cDebes esperar &f%seconds%s &cantes de enviar otra solicitud."
     teleport-failed: "&cNo se pudo completar el teletransporte."
-    warmup-started: "&eTeletransporte aceptado. No te muevas ni entres en combate durante &f%seconds% segundos&e."
+    warmup-started: "&eTeletransporte aceptado. Tienes &f%grace_seconds%s &epara detenerte; después no te muevas durante &f%movement_lock_seconds%s&e. Entrar en combate cancela la espera."
     warmup-started-target: "&7%player% se teletransportará hacia ti en &f%seconds% segundos&7."
     warmup-cancelled-move: "&cEl teletransporte fue cancelado porque te moviste."
     warmup-cancelled-damage: "&cEl teletransporte fue cancelado porque recibiste daño."

@@ -1,0 +1,10 @@
+# Añadir dentro del bloque `tpa:` de plugins/MDVTools/config.yml
+
+# Espera total desde que aceptan la solicitud.
+teleport-delay-seconds: 4
+
+# Primer segundo libre de cancelación por movimiento.
+movement-grace-seconds: 1
+
+# Mensaje opcional dentro de `tpa.messages:`
+# warmup-started: "&eTeletransporte aceptado. Tienes &f%grace_seconds%s &epara detenerte; después no te muevas durante &f%movement_lock_seconds%s&e. Entrar en combate cancela la espera."

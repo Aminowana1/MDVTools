@@ -1,4 +1,12 @@
-# MDVTools 1.0.14
+# MDVTools 1.0.15
+
+## MDVTools 1.0.15 - Gracia inicial de movimiento en TPA
+
+- El TPA mantiene una espera total configurable de 4 segundos.
+- Durante el primer segundo después de aceptar, el solicitante todavía puede moverse sin cancelar.
+- Después quedan 3 segundos en los que cualquier movimiento sí cancela el teletransporte.
+- Recibir daño o atacar sigue cancelando inmediatamente para evitar abusos.
+- Nueva opción: `tpa.movement-grace-seconds`.
 
 ## MDVTools 1.0.14 - Identificación probabilística
 
@@ -118,7 +126,7 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.14.jar`.
+El `.jar` queda en `target/MDVTools-1.0.15.jar`.
 
 
 ## MDVTools 1.0.9

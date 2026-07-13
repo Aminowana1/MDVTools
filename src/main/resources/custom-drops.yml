@@ -1,6 +1,7 @@
 # MDVTools - Drops custom
 # Archivo separado para premios raros al romper/cosechar bloques.
 # chance usa porcentaje: 0.25 = 0.25% = aprox 1 cada 400.
+# category clasifica el drop para aplicar el bonus relativo correspondiente.
 # mature-only: true evita drops en cultivos inmaduros.
 # drop-naturally: true intenta dropear el item MMOItems físicamente en el suelo.
 # Si no puede construir el ItemStack de MMOItems, usa default-fallback-command.
@@ -12,6 +13,7 @@ default-fallback-command: "mi give %type% %id% %player% %amount%"
 drops:
   brote-dorado-trigo:
     enabled: true
+    category: FARMING
     block: WHEAT
     mature-only: true
     chance: 0.25
@@ -26,3 +28,13 @@ drops:
     # Opcional: si true, exige herramienta con lore MDVTools o una línea concreta.
     require-tool-lore: false
     required-tool-lore-contains: []
+
+# Categorías válidas por entrada:
+# category: FARMING      # bonus de Agricultor / Agricultura Drops raros
+# category: MINING       # bonus de Minero / Minerales Raros
+# category: WOODCUTTING  # bonus de Leñador / Nodos de arbol extra
+# category: NONE         # chance fija, sin bonus relativo
+# category: AUTO         # detección automática; es el valor por defecto
+#
+# En 1.0.17, los bloques extra de Rotura Múltiple y Tala Múltiple también
+# realizan su propio sorteo si están habilitados en config.yml.

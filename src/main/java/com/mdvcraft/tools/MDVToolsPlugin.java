@@ -13,6 +13,7 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.TileState;
 import org.bukkit.block.data.Ageable;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -107,6 +108,12 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private boolean customDropsEnabled;
     private String customDropsFallbackCommand;
     private final List<CustomDropDefinition> customDrops = new ArrayList<>();
+    private boolean customDropsRollMiningExtras;
+    private boolean customDropsRollWoodcuttingExtras;
+    private boolean customDropsRelativeBonusesEnabled;
+    private boolean customDropsRelativeFarmingBonus;
+    private boolean customDropsRelativeMiningBonus;
+    private boolean customDropsRelativeWoodcuttingBonus;
 
     private boolean equipmentBonusesEnabled;
     private boolean agricultureRareBonusEnabled;
@@ -423,6 +430,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         loadWeaponSwapLockSettings();
         loadTwoHandedAbilityLockSettings();
         loadAbilityDurabilityCostSettings();
+        loadCustomDropBehaviorSettings();
         loadCustomDrops();
 
         debug("Config cargada. Mining=" + miningAllowed.size() + ", Logs=" + logsAllowed.size() + ", Crops=" + cropsAllowed.size() + ", AntiGhost=" + antiGhostAllowed.size() + ", CustomDrops=" + customDrops.size());
@@ -734,6 +742,16 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         return result;
     }
 
+    private void loadCustomDropBehaviorSettings() {
+        customDropsRollMiningExtras = getConfig().getBoolean("custom-drops.roll-on-extra-blocks.mining", true);
+        customDropsRollWoodcuttingExtras = getConfig().getBoolean("custom-drops.roll-on-extra-blocks.woodcutting", true);
+
+        customDropsRelativeBonusesEnabled = getConfig().getBoolean("custom-drops.relative-bonuses.enabled", true);
+        customDropsRelativeFarmingBonus = getConfig().getBoolean("custom-drops.relative-bonuses.farming", true);
+        customDropsRelativeMiningBonus = getConfig().getBoolean("custom-drops.relative-bonuses.mining", true);
+        customDropsRelativeWoodcuttingBonus = getConfig().getBoolean("custom-drops.relative-bonuses.woodcutting", true);
+    }
+
     private void ensureCustomDropsFile() {
         customDropsFile = new File(getDataFolder(), "custom-drops.yml");
         if (!customDropsFile.exists()) {
@@ -772,6 +790,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             CustomDropDefinition def = new CustomDropDefinition();
             def.key = key;
             def.enabled = cfg.getBoolean("enabled", true);
+            def.category = parseCustomDropCategory(cfg.getString("category", cfg.getString("categoria", "AUTO")), key);
             def.matureOnly = cfg.getBoolean("mature-only", cfg.getBoolean("only-mature", true));
             def.chance = Math.max(0.0, cfg.getDouble("chance", 0.0));
             def.amountMin = Math.max(1, cfg.getInt("amount-min", 1));
@@ -1365,7 +1384,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         for (Block candidate : candidates) {
             if (broken >= extra) break;
             if (!allowed.contains(candidate.getType())) continue;
-            if (breakExtraNaturally(player, candidate, tool)) broken++;
+            if (breakExtraNaturally(player, candidate, tool, CustomDropCategory.MINING)) broken++;
         }
         return broken;
     }
@@ -1437,7 +1456,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             current = current.getRelative(face);
             if (!allowed.contains(current.getType())) break;
 
-            if (breakExtraNaturally(player, current, tool)) {
+            if (breakExtraNaturally(player, current, tool, CustomDropCategory.MINING)) {
                 broken++;
             } else {
                 break;
@@ -1461,7 +1480,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             Block block = queue.poll();
             if (!allowed.contains(block.getType())) continue;
 
-            if (breakExtraNaturally(player, block, tool)) {
+            if (breakExtraNaturally(player, block, tool, CustomDropCategory.WOODCUTTING)) {
                 broken++;
                 addNeighbors(block, queue, visited);
             }
@@ -1575,13 +1594,27 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         return !extraEvent.isCancelled();
     }
 
-    private boolean breakExtraNaturally(Player player, Block block, ItemStack tool) {
+    private boolean breakExtraNaturally(Player player, Block block, ItemStack tool, CustomDropCategory sourceCategory) {
         if (!canBreakExtraBlock(player, block)) return false;
+
+        CustomDropBlockSnapshot dropSnapshot = CustomDropBlockSnapshot.capture(block);
         boolean broken = block.breakNaturally(tool);
         if (broken) {
+            if (shouldRollCustomDropsOnExtra(sourceCategory)) {
+                rollCustomDrops(player, dropSnapshot, tool);
+            }
             scheduleAntiGhostRefresh(player, block);
         }
         return broken;
+    }
+
+    private boolean shouldRollCustomDropsOnExtra(CustomDropCategory sourceCategory) {
+        if (!customDropsEnabled || customDrops.isEmpty() || sourceCategory == null) return false;
+        return switch (sourceCategory) {
+            case MINING -> customDropsRollMiningExtras;
+            case WOODCUTTING -> customDropsRollWoodcuttingExtras;
+            default -> false;
+        };
     }
 
     private void harvestCrop(Block block, Player player, ItemStack tool, boolean autoReplant) {
@@ -1611,16 +1644,24 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
     private void rollCustomDrops(Player player, Block block, ItemStack tool) {
-        if (!customDropsEnabled || customDrops.isEmpty() || player == null || block == null) return;
+        if (block == null) return;
+        rollCustomDrops(player, CustomDropBlockSnapshot.capture(block), tool);
+    }
 
-        EquipmentBonuses bonuses = agricultureRareBonusEnabled ? readCombinedBonuses(player) : EquipmentBonuses.EMPTY;
+    private void rollCustomDrops(Player player, CustomDropBlockSnapshot snapshot, ItemStack tool) {
+        if (!customDropsEnabled || customDrops.isEmpty() || player == null || snapshot == null) return;
+
+        EquipmentBonuses bonuses = customDropsRelativeBonusesEnabled
+                ? readCombinedBonuses(player)
+                : EquipmentBonuses.EMPTY;
 
         for (CustomDropDefinition def : customDrops) {
-            if (!matchesCustomDrop(def, player, block, tool)) continue;
+            if (!matchesCustomDrop(def, snapshot, tool)) continue;
 
+            CustomDropCategory category = resolveCustomDropCategory(def, snapshot);
             double effectiveChance = def.chance;
-            if (agricultureRareBonusEnabled && isAgricultureCustomDrop(block)) {
-                effectiveChance = applyRelativeBonus(effectiveChance, bonuses.agricultureRareDrops);
+            if (isRelativeCustomDropBonusEnabled(category)) {
+                effectiveChance = applyRelativeBonus(effectiveChance, relativeBonusForCategory(bonuses, category));
             }
 
             if (ThreadLocalRandom.current().nextDouble(100.0) >= effectiveChance) continue;
@@ -1629,15 +1670,15 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             if (def.amountMax > def.amountMin) {
                 amount = ThreadLocalRandom.current().nextInt(def.amountMin, def.amountMax + 1);
             }
-            dropCustomMmoItem(def, player, block, amount);
+            dropCustomMmoItem(def, player, snapshot, amount);
         }
     }
 
-    private boolean matchesCustomDrop(CustomDropDefinition def, Player player, Block block, ItemStack tool) {
-        if (def == null || !def.enabled) return false;
-        if (!def.blocks.contains(block.getType())) return false;
-        if (!def.worlds.isEmpty() && !def.worlds.contains(block.getWorld().getName())) return false;
-        if (def.matureOnly && !isMatureCrop(block)) return false;
+    private boolean matchesCustomDrop(CustomDropDefinition def, CustomDropBlockSnapshot snapshot, ItemStack tool) {
+        if (def == null || !def.enabled || snapshot == null) return false;
+        if (!def.blocks.contains(snapshot.type)) return false;
+        if (!def.worlds.isEmpty() && !def.worlds.contains(snapshot.world.getName())) return false;
+        if (def.matureOnly && !isMatureCrop(snapshot.blockData)) return false;
 
         if (def.requireToolLore) {
             if (tool == null || tool.getType() == Material.AIR) return false;
@@ -1657,10 +1698,73 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         return true;
     }
 
-    private boolean isAgricultureCustomDrop(Block block) {
-        if (block == null) return false;
-        if (cropsAllowed.contains(block.getType())) return true;
-        return block.getBlockData() instanceof Ageable;
+    private CustomDropCategory resolveCustomDropCategory(CustomDropDefinition def, CustomDropBlockSnapshot snapshot) {
+        if (def != null && def.category != null && def.category != CustomDropCategory.AUTO) return def.category;
+        if (snapshot == null) return CustomDropCategory.NONE;
+
+        if (cropsAllowed.contains(snapshot.type) || snapshot.blockData instanceof Ageable) {
+            return CustomDropCategory.FARMING;
+        }
+        if (logsAllowed.contains(snapshot.type) || isWoodLikeMaterial(snapshot.type)) {
+            return CustomDropCategory.WOODCUTTING;
+        }
+        if (miningAllowed.contains(snapshot.type) || isOreLikeMaterial(snapshot.type)) {
+            return CustomDropCategory.MINING;
+        }
+        return CustomDropCategory.NONE;
+    }
+
+    private CustomDropCategory parseCustomDropCategory(String raw, String key) {
+        String normalized = normalizeLoose(raw).toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "", "auto", "automatico", "automatica" -> CustomDropCategory.AUTO;
+            case "none", "ninguna", "ninguno", "sin bonus", "sin categoria" -> CustomDropCategory.NONE;
+            case "farming", "farm", "agriculture", "agricultura", "cultivo", "cosecha" -> CustomDropCategory.FARMING;
+            case "mining", "mine", "mineria", "minero", "mineral", "minerales" -> CustomDropCategory.MINING;
+            case "woodcutting", "wood", "tala", "lenador", "arbol", "arboles" -> CustomDropCategory.WOODCUTTING;
+            default -> {
+                getLogger().warning("Categoría inválida en custom-drops.yml -> " + key + ".category: " + raw + ". Usaré AUTO.");
+                yield CustomDropCategory.AUTO;
+            }
+        };
+    }
+
+    private boolean isRelativeCustomDropBonusEnabled(CustomDropCategory category) {
+        if (!customDropsRelativeBonusesEnabled || category == null) return false;
+        return switch (category) {
+            case FARMING -> customDropsRelativeFarmingBonus && agricultureRareBonusEnabled;
+            case MINING -> customDropsRelativeMiningBonus && headOreExtraBonusEnabled;
+            case WOODCUTTING -> customDropsRelativeWoodcuttingBonus && treeNodeExtraBonusEnabled;
+            default -> false;
+        };
+    }
+
+    private double relativeBonusForCategory(EquipmentBonuses bonuses, CustomDropCategory category) {
+        if (bonuses == null || category == null) return 0.0;
+        return switch (category) {
+            case FARMING -> bonuses.agricultureRareDrops;
+            case MINING -> bonuses.rareMinerals;
+            case WOODCUTTING -> bonuses.treeNodeExtra;
+            default -> 0.0;
+        };
+    }
+
+    private boolean isWoodLikeMaterial(Material material) {
+        if (material == null) return false;
+        String name = material.name();
+        return name.endsWith("_LOG") || name.endsWith("_WOOD")
+                || name.endsWith("_STEM") || name.endsWith("_HYPHAE");
+    }
+
+    private boolean isOreLikeMaterial(Material material) {
+        if (material == null) return false;
+        String name = material.name();
+        return name.endsWith("_ORE") || material == Material.ANCIENT_DEBRIS;
+    }
+
+    private boolean isMatureCrop(BlockData blockData) {
+        if (!(blockData instanceof Ageable ageable)) return false;
+        return ageable.getAge() >= ageable.getMaximumAge();
     }
 
     private double applyRelativeBonus(double baseChance, double bonusPercent) {
@@ -1708,34 +1812,35 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         debug("Fallback drop extra por lore usado para " + typeId + ":" + itemId);
     }
 
-    private void dropCustomMmoItem(CustomDropDefinition def, Player player, Block block, int amount) {
+    private void dropCustomMmoItem(CustomDropDefinition def, Player player, CustomDropBlockSnapshot snapshot, int amount) {
         amount = Math.max(1, amount);
 
         if (def.dropNaturally) {
             ItemStack stack = buildMmoItemStack(def.mmoitemsType, def.mmoitemsId, amount);
             if (stack != null && stack.getType() != Material.AIR) {
-                Location location = block.getLocation().add(0.5, 0.55, 0.5);
-                Item item = block.getWorld().dropItemNaturally(location, stack);
+                Location location = snapshot.location.clone().add(0.5, 0.55, 0.5);
+                Item item = snapshot.world.dropItemNaturally(location, stack);
                 item.setPickupDelay(10);
-                debug("Drop custom: " + def.mmoitemsType + ":" + def.mmoitemsId + " x" + amount + " en " + block.getType());
+                debug("Drop custom [" + resolveCustomDropCategory(def, snapshot) + "]: "
+                        + def.mmoitemsType + ":" + def.mmoitemsId + " x" + amount + " en " + snapshot.type);
                 return;
             }
         }
 
-        runCustomDropFallback(def, player, block, amount);
+        runCustomDropFallback(def, player, snapshot, amount);
     }
 
-    private void runCustomDropFallback(CustomDropDefinition def, Player player, Block block, int amount) {
+    private void runCustomDropFallback(CustomDropDefinition def, Player player, CustomDropBlockSnapshot snapshot, int amount) {
         String command = def.fallbackCommand;
         if (command == null || command.isBlank()) command = customDropsFallbackCommand;
         if (command == null || command.isBlank()) return;
 
         command = command
                 .replace("%player%", player.getName())
-                .replace("%world%", block.getWorld().getName())
-                .replace("%x%", Integer.toString(block.getX()))
-                .replace("%y%", Integer.toString(block.getY()))
-                .replace("%z%", Integer.toString(block.getZ()))
+                .replace("%world%", snapshot.world.getName())
+                .replace("%x%", Integer.toString(snapshot.location.getBlockX()))
+                .replace("%y%", Integer.toString(snapshot.location.getBlockY()))
+                .replace("%z%", Integer.toString(snapshot.location.getBlockZ()))
                 .replace("%drop%", def.key)
                 .replace("%type%", def.mmoitemsType)
                 .replace("%id%", def.mmoitemsId)
@@ -3668,9 +3773,41 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    private enum CustomDropCategory {
+        AUTO,
+        NONE,
+        FARMING,
+        MINING,
+        WOODCUTTING
+    }
+
+    private static final class CustomDropBlockSnapshot {
+        final World world;
+        final Location location;
+        final Material type;
+        final BlockData blockData;
+
+        CustomDropBlockSnapshot(World world, Location location, Material type, BlockData blockData) {
+            this.world = world;
+            this.location = location;
+            this.type = type;
+            this.blockData = blockData;
+        }
+
+        static CustomDropBlockSnapshot capture(Block block) {
+            return new CustomDropBlockSnapshot(
+                    block.getWorld(),
+                    block.getLocation().clone(),
+                    block.getType(),
+                    block.getBlockData().clone()
+            );
+        }
+    }
+
     private static final class CustomDropDefinition {
         String key;
         boolean enabled;
+        CustomDropCategory category = CustomDropCategory.AUTO;
         boolean matureOnly;
         double chance;
         int amountMin;

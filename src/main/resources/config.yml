@@ -1,4 +1,4 @@
-# MDVTools 1.0.16
+# MDVTools 1.0.17
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -174,10 +174,11 @@ farming:
 # '&8Minerales Raros: &a+2%'
 # '&8Nodos de arbol extra: &a+2%'
 #
-# Agricultura Drops raros = bonus RELATIVO sobre custom-drops.yml.
+# Las tres líneas también pueden modificar de forma RELATIVA los drops clasificados
+# en custom-drops.yml como FARMING, MINING o WOODCUTTING.
 # Ejemplo: chance base 0.25%, bonus +8% => 0.25 * 1.08 = 0.27%.
-# Minerales Raros / Nodos de arbol extra = chance ABSOLUTA de dropear +1 item extra
-# al romper vetas/nodos custom de MDVHeadOres.
+# Además, Minerales Raros / Nodos de arbol extra conservan su función ABSOLUTA:
+# chance de dropear +1 item extra al romper vetas/nodos custom de MDVHeadOres.
 equipment-bonuses:
   enabled: true
 
@@ -216,9 +217,9 @@ equipment-bonuses:
 # mining.yml -> mining, farming.yml -> farming, woodcutting.yml -> woodcutting.
 #
 # Se suman a los bonus de armadura y herramienta:
-# - Minería: probabilidad ABSOLUTA de +1 drop de mineral MDVHeadOres.
-# - Agricultura: bonus RELATIVO sobre la chance base de custom-drops.yml.
-# - Leñador: probabilidad ABSOLUTA de +1 drop de nodo de árbol MDVHeadOres.
+# - Las tres profesiones aumentan de forma RELATIVA los custom drops de su categoría.
+# - Minería conserva además la probabilidad ABSOLUTA de +1 mineral de MDVHeadOres.
+# - Leñador conserva además la probabilidad ABSOLUTA de +1 drop de nodo MDVHeadOres.
 profession-bonuses:
   enabled: true
   mmocore-plugin-name: "MMOCore"
@@ -253,6 +254,31 @@ profession-bonuses:
   # Cambia mining por farming o woodcutting. También existen alias españoles:
   # minero, agricultor y lenador.
   # Agrega _formatted al final para obtener, por ejemplo, +12.5%.
+
+
+# Comportamiento global de custom-drops.yml.
+# No reemplaza custom-drops.yml: solamente controla cómo MDVTools procesa esos drops.
+custom-drops:
+  # Los bloques adicionales destruidos por Rotura/Tala Múltiple también hacen su sorteo.
+  roll-on-extra-blocks:
+    mining: true
+    woodcutting: true
+
+  # Aplica el bonus total de profesión + armadura + herramienta de forma RELATIVA
+  # sobre la chance base de cada drop según su campo category.
+  # Ejemplo: 0.08% base con +50% total => 0.12% final.
+  relative-bonuses:
+    enabled: true
+    farming: true
+    mining: true
+    woodcutting: true
+
+  # Categorías válidas dentro de cada entrada de custom-drops.yml:
+  # category: FARMING
+  # category: MINING
+  # category: WOODCUTTING
+  # category: NONE   -> no recibe bonus relativo
+  # category: AUTO   -> detecta según cultivo, tronco o bloque minable
 
 
 # Bloqueo corto al cambiar a un arma MMOItems.

@@ -1,6 +1,16 @@
-# MDVTools 1.0.16
+# MDVTools 1.0.17
 
-## MDVTools 1.0.16 - Formas de minería, herramientas de profesión y MMOCore
+## MDVTools 1.0.17 - Custom drops por profesión
+
+- Cada entrada de `custom-drops.yml` puede usar `category: FARMING`, `MINING`, `WOODCUTTING`, `NONE` o `AUTO`.
+- El bonus total de profesión + armadura + herramienta aumenta de forma relativa la chance base de los drops de su categoría.
+- Los bloques adicionales de Rotura Múltiple y Tala Múltiple también hacen un sorteo individual de custom drops.
+- Minería y tala mantienen además su sorteo absoluto independiente de `MDVHeadOres` para obtener una unidad extra del nodo/mineral.
+
+Ejemplo: un drop `MINING` con `chance: 0.08` y bonus total `+50%` queda en `0.12%`. Esto no cambia el sorteo separado de MDVHeadOres.
+
+
+## MDVTools 1.0.17 - Formas de minería, herramientas de profesión y MMOCore
 
 ### Formas nuevas para picos
 
@@ -195,7 +205,7 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.16.jar`.
+El `.jar` queda en `target/MDVTools-1.0.17.jar`.
 
 
 ## MDVTools 1.0.9

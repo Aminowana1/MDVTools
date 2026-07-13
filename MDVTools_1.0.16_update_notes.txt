@@ -1,0 +1,99 @@
+MDVTools 1.0.16
+=================
+
+NOVEDADES
+---------
+
+1. Formas de pico configurables por lore
+
+La línea "Rotura Multiple" mantiene su significado original: cantidad máxima de
+bloques EXTRA. La nueva línea "Forma de Pico" decide cómo se buscan esos bloques.
+
+Ejemplos:
+
+  Rotura Multiple: 2
+  Forma de Pico: Linea
+
+  Rotura Multiple: 8
+  Forma de Pico: Plano 3x3
+
+  Rotura Multiple: 15
+  Forma de Pico: Rectangulo 4x4
+
+  Rotura Multiple: 26
+  Forma de Pico: Cubo 3x3x3
+
+Alias aceptados:
+- LINE / LINEA
+- PLANE / PLANO / CUADRADO / RECTANGULO / AREA
+- CUBE / CUBO
+
+El plano se orienta perpendicularmente a la dirección en la que mira el jugador.
+Las formas respetan mining.allowed-blocks, los límites configurados, las
+protecciones y la durabilidad por bloque extra.
+
+2. Bonus de drops raros en herramientas
+
+Ahora estas líneas funcionan tanto en armaduras equipadas como en la herramienta
+de la MANO PRINCIPAL:
+
+  Agricultura Drops raros: +2%
+  Minerales Raros: +2%
+  Nodos de arbol extra: +2%
+
+La mano secundaria y los items guardados en el inventario NO cuentan.
+Por defecto se exige el tipo correcto:
+- Agricultura -> azada
+- Minerales -> pico
+- Nodos de árbol -> hacha
+
+3. Integración con profesiones de MMOCore
+
+MDVTools lee el nivel de estas profesiones:
+- mining
+- farming
+- woodcutting
+
+Los IDs son configurables y corresponden a los nombres de los archivos YAML de
+plugins/MMOCore/professions.
+
+Valores incluidos como base provisional:
+- mining: +0.60% por nivel
+- farming: +0.75% por nivel
+- woodcutting: +0.50% por nivel
+
+Los bonus de profesión se suman a armadura y herramienta. Hay topes separados
+para el bonus profesional y el total combinado.
+
+4. Placeholders de PlaceholderAPI
+
+Ejemplos para minería:
+
+  %mdvtools_mining_level%
+  %mdvtools_mining_bonus%
+  %mdvtools_mining_armor_bonus%
+  %mdvtools_mining_tool_bonus%
+  %mdvtools_mining_equipment_bonus%
+  %mdvtools_mining_total_bonus%
+
+Cambia mining por farming o woodcutting. Alias españoles: minero, agricultor y
+lenador. Añade _formatted para obtener el signo y símbolo de porcentaje, por
+ejemplo:
+
+  %mdvtools_mining_total_bonus_formatted% -> +12.5%
+
+MIGRACIÓN DESDE 1.0.15
+----------------------
+
+1. Conserva la carpeta plugins/MDVTools y todos sus datos.
+2. Reemplaza el JAR por MDVTools 1.0.16.
+3. Añade a tu config actual los bloques indicados en
+   MDVTools_1.0.16_config_addition.yml.
+4. Mantén MMOCore y PlaceholderAPI instalados. Si PlaceholderAPI no está, solo se
+   desactivan los placeholders; el resto del plugin sigue funcionando.
+5. Reinicia el servidor. Para cambios posteriores de valores puedes usar
+   /mdvtools reload.
+
+No debes cambiar los archivos mining.yml, farming.yml ni woodcutting.yml de
+MMOCore para que MDVTools los detecte: sus IDs ya coinciden con la configuración
+incluida.

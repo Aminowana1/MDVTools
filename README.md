@@ -1,4 +1,73 @@
-# MDVTools 1.0.15
+# MDVTools 1.0.16
+
+## MDVTools 1.0.16 - Formas de minería, herramientas de profesión y MMOCore
+
+### Formas nuevas para picos
+
+La forma se define por lore y `Rotura Multiple` continúa indicando cuántos bloques **extra** puede romper como máximo.
+
+```yml
+# Línea tradicional: bloque normal + 2 extra
+- '&3 &7■ &fRotura Multiple: 2'
+- '&3 &7■ &fForma de Pico: Linea'
+
+# Plano 3x3 completo: bloque normal + 8 extra
+- '&3 &7■ &fRotura Multiple: 8'
+- '&3 &7■ &fForma de Pico: Plano 3x3'
+
+# Rectángulo 4x4 completo: bloque normal + 15 extra
+- '&3 &7■ &fRotura Multiple: 15'
+- '&3 &7■ &fForma de Pico: Rectangulo 4x4'
+
+# Cubo 3x3x3 completo: bloque normal + 26 extra
+- '&3 &7■ &fRotura Multiple: 26'
+- '&3 &7■ &fForma de Pico: Cubo 3x3x3'
+```
+
+Alias reconocidos: `LINE/LINEA`, `PLANE/PLANO/CUADRADO/RECTANGULO/AREA` y `CUBE/CUBO`. El plano se orienta perpendicularmente hacia donde mira el jugador. Solo rompe materiales incluidos en `mining.allowed-blocks` y conserva las comprobaciones de protección.
+
+### Bonus de drops en herramientas
+
+Las mismas líneas utilizadas por las armaduras ahora pueden estar en herramientas:
+
+```yml
+- '&8Agricultura Drops raros: &a+2%'
+- '&8Minerales Raros: &a+2%'
+- '&8Nodos de arbol extra: &a+2%'
+```
+
+Las herramientas se leen exclusivamente desde la **mano principal**. La offhand y el inventario no aportan bonus. Con `require-matching-tool-type: true`, agricultura solo cuenta en azadas, minerales en picos y nodos de árbol en hachas.
+
+### Bonus por profesiones de MMOCore
+
+Los IDs configurados por defecto son los nombres de tus archivos:
+
+- `mining`
+- `farming`
+- `woodcutting`
+
+Valores provisionales incluidos:
+
+- Minero: `+0.60%` por nivel.
+- Agricultor: `+0.75%` por nivel.
+- Leñador: `+0.50%` por nivel.
+
+Todo es configurable en `profession-bonuses`. Los bonus de nivel se suman a armadura y herramienta.
+
+### Placeholders
+
+Requieren PlaceholderAPI:
+
+```text
+%mdvtools_mining_level%
+%mdvtools_mining_bonus%
+%mdvtools_mining_armor_bonus%
+%mdvtools_mining_tool_bonus%
+%mdvtools_mining_equipment_bonus%
+%mdvtools_mining_total_bonus%
+```
+
+Cambia `mining` por `farming` o `woodcutting`. También funcionan `minero`, `agricultor` y `lenador`. Añade `_formatted` al final para recibir un valor como `+12.5%`.
 
 ## MDVTools 1.0.15 - Gracia inicial de movimiento en TPA
 
@@ -126,7 +195,7 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.15.jar`.
+El `.jar` queda en `target/MDVTools-1.0.16.jar`.
 
 
 ## MDVTools 1.0.9

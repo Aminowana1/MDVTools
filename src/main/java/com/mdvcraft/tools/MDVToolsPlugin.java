@@ -62,6 +62,7 @@ import java.text.Normalizer;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import org.bukkit.NamespacedKey;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -96,6 +97,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private int maxWoodExtra;
     private int maxCropExtra;
 
+    private MiningShape defaultMiningShape = MiningShape.LINE;
+    private int miningShapeMaxWidth;
+    private int miningShapeMaxHeight;
+    private int miningShapeMaxDepth;
+
     private File customDropsFile;
     private FileConfiguration customDropsConfig;
     private boolean customDropsEnabled;
@@ -106,7 +112,10 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private boolean agricultureRareBonusEnabled;
     private boolean headOreExtraBonusEnabled;
     private boolean treeNodeExtraBonusEnabled;
+    private boolean mainHandToolBonusesEnabled;
+    private boolean mainHandToolRequireMatchingType;
     private double maxEquipmentBonusPercent;
+    private double maxCombinedBonusPercent;
     private int headOreExtraAmount;
     private int treeNodeExtraAmount;
     private Pattern agricultureRareBonusPattern;
@@ -116,6 +125,27 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private NamespacedKey headOreNodeKey;
     private NamespacedKey headOreDropTypeKey;
     private NamespacedKey headOreDropIdKey;
+
+    private boolean professionBonusesEnabled;
+    private String mmocorePluginName;
+    private long professionBonusCacheMs;
+    private double professionBonusMaxPercent;
+    private boolean professionBonusCountStartingLevel;
+    private String miningProfessionId;
+    private String farmingProfessionId;
+    private String woodcuttingProfessionId;
+    private double miningBonusPerLevel;
+    private double farmingBonusPerLevel;
+    private double woodcuttingBonusPerLevel;
+    private final Map<UUID, ProfessionSnapshot> professionBonusCache = new ConcurrentHashMap<>();
+
+    private boolean mmocoreReflectionTried;
+    private Method mmocorePlayerDataHasMethod;
+    private Method mmocorePlayerDataGetMethod;
+    private Class<?> mmocorePlayerDataHasLookupType;
+    private Class<?> mmocorePlayerDataGetLookupType;
+    private Method mmocoreGetCollectionSkillsMethod;
+    private Method mmocoreGetProfessionLevelMethod;
 
     private boolean crossbowAutoReloadEnabled;
     private boolean crossbowOnlyOnEntityHit;
@@ -229,6 +259,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private Pattern talaPattern;
     private Pattern roturaPattern;
     private Pattern cosechaPattern;
+    private Pattern miningShapePattern;
     private String autoReplantKey;
 
     private String prefix;
@@ -261,6 +292,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         loadSettings();
         Bukkit.getPluginManager().registerEvents(this, this);
         registerWeaponSwapLockExternalEvents();
+        registerPlaceholderExpansion();
         getLogger().info("MDVTools activado.");
     }
 
@@ -272,6 +304,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         twoHandedAbilityLockLastBlockedMessage.clear();
         abilityDurabilityLastCharge.clear();
         identificationSuppressedTargets.clear();
+        professionBonusCache.clear();
         tpaIncoming.clear();
         tpaOutgoing.clear();
         tpaCooldownUntil.clear();
@@ -281,6 +314,29 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         tpaWarmups.clear();
         tpaInvulnerableUntil.clear();
         getLogger().info("MDVTools desactivado.");
+    }
+
+    private void registerPlaceholderExpansion() {
+        Plugin placeholderApi = Bukkit.getPluginManager().getPlugin("PlaceholderAPI");
+        if (placeholderApi == null || !placeholderApi.isEnabled()) {
+            debug("PlaceholderAPI no está cargado; placeholders de MDVTools no registrados.");
+            return;
+        }
+
+        try {
+            Class<?> expansionClass = Class.forName("com.mdvcraft.tools.MDVToolsPlaceholderExpansion");
+            Object expansion = expansionClass.getConstructor(MDVToolsPlugin.class).newInstance(this);
+            Object registered = expansionClass.getMethod("register").invoke(expansion);
+            if (registered instanceof Boolean bool && !bool) {
+                getLogger().warning("PlaceholderAPI rechazó el registro de la expansión mdvtools.");
+            } else {
+                getLogger().info("Placeholders %mdvtools_*% registrados.");
+            }
+        } catch (Throwable throwable) {
+            getLogger().warning("No se pudieron registrar los placeholders de MDVTools: "
+                    + throwable.getClass().getSimpleName()
+                    + (throwable.getMessage() == null ? "" : " - " + throwable.getMessage()));
+        }
     }
 
     private void loadSettings() {
@@ -310,19 +366,26 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         String tala = getConfig().getString("lore.tala-multiple", "Tala Multiple");
         String rotura = getConfig().getString("lore.rotura-multiple", "Rotura Multiple");
         String cosecha = getConfig().getString("lore.multi-cosecha", "Multi Cosecha");
+        String miningShape = getConfig().getString("lore.forma-pico", "Forma de Pico");
         autoReplantKey = normalize(getConfig().getString("lore.auto-replantar", "Auto Replantar"));
 
         talaPattern = Pattern.compile(Pattern.quote(normalize(tala)) + "\\s*:\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
         roturaPattern = Pattern.compile(Pattern.quote(normalize(rotura)) + "\\s*:\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
         cosechaPattern = Pattern.compile(Pattern.quote(normalize(cosecha)) + "\\s*:\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
+        miningShapePattern = Pattern.compile(Pattern.quote(normalize(miningShape)) + "\\s*:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
 
         miningEnabled = getConfig().getBoolean("mining.enabled", true);
         woodcuttingEnabled = getConfig().getBoolean("woodcutting.enabled", true);
         farmingEnabled = getConfig().getBoolean("farming.enabled", true);
 
-        maxMiningExtra = Math.max(0, getConfig().getInt("mining.max-extra-blocks", 12));
+        maxMiningExtra = Math.max(0, getConfig().getInt("mining.max-extra-blocks", 32));
         maxWoodExtra = Math.max(0, getConfig().getInt("woodcutting.max-extra-blocks", 24));
         maxCropExtra = Math.max(0, getConfig().getInt("farming.max-extra-crops", 24));
+
+        defaultMiningShape = parseMiningShapeName(getConfig().getString("mining.mode", "LINE"), MiningShape.LINE);
+        miningShapeMaxWidth = Math.max(1, getConfig().getInt("mining.shapes.max-width", 7));
+        miningShapeMaxHeight = Math.max(1, getConfig().getInt("mining.shapes.max-height", 7));
+        miningShapeMaxDepth = Math.max(1, getConfig().getInt("mining.shapes.max-depth", 5));
 
         durabilityEnabled = getConfig().getBoolean("durability.enabled", true);
         durabilityCostBlock = Math.max(0, getConfig().getInt("durability.cost-per-extra-block", 1));
@@ -354,6 +417,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
 
         loadEquipmentBonusSettings();
+        loadProfessionBonusSettings();
         loadIdentificationSettings();
         loadCrossbowAutoReloadSettings();
         loadWeaponSwapLockSettings();
@@ -369,7 +433,10 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         agricultureRareBonusEnabled = getConfig().getBoolean("equipment-bonuses.agriculture-rare-drops.enabled", true);
         headOreExtraBonusEnabled = getConfig().getBoolean("equipment-bonuses.rare-minerals.enabled", true);
         treeNodeExtraBonusEnabled = getConfig().getBoolean("equipment-bonuses.tree-node-extra.enabled", true);
+        mainHandToolBonusesEnabled = getConfig().getBoolean("equipment-bonuses.main-hand-tools.enabled", true);
+        mainHandToolRequireMatchingType = getConfig().getBoolean("equipment-bonuses.main-hand-tools.require-matching-tool-type", true);
         maxEquipmentBonusPercent = Math.max(0.0, getConfig().getDouble("equipment-bonuses.max-total-bonus-percent", 100.0));
+        maxCombinedBonusPercent = Math.max(0.0, getConfig().getDouble("equipment-bonuses.max-combined-bonus-percent", 100.0));
         headOreExtraAmount = Math.max(1, getConfig().getInt("equipment-bonuses.rare-minerals.extra-amount", 1));
         treeNodeExtraAmount = Math.max(1, getConfig().getInt("equipment-bonuses.tree-node-extra.extra-amount", 1));
 
@@ -394,6 +461,31 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+
+    private void loadProfessionBonusSettings() {
+        professionBonusesEnabled = getConfig().getBoolean("profession-bonuses.enabled", true);
+        mmocorePluginName = getConfig().getString("profession-bonuses.mmocore-plugin-name", "MMOCore");
+        professionBonusCacheMs = Math.max(0L, getConfig().getLong("profession-bonuses.cache-ms", 1000L));
+        professionBonusMaxPercent = Math.max(0.0, getConfig().getDouble("profession-bonuses.max-profession-bonus-percent", 100.0));
+        professionBonusCountStartingLevel = getConfig().getBoolean("profession-bonuses.count-starting-level", true);
+
+        miningProfessionId = normalizeProfessionId(getConfig().getString("profession-bonuses.mining.profession-id", "mining"));
+        farmingProfessionId = normalizeProfessionId(getConfig().getString("profession-bonuses.farming.profession-id", "farming"));
+        woodcuttingProfessionId = normalizeProfessionId(getConfig().getString("profession-bonuses.woodcutting.profession-id", "woodcutting"));
+
+        miningBonusPerLevel = Math.max(0.0, getConfig().getDouble("profession-bonuses.mining.bonus-per-level", 0.60));
+        farmingBonusPerLevel = Math.max(0.0, getConfig().getDouble("profession-bonuses.farming.bonus-per-level", 0.75));
+        woodcuttingBonusPerLevel = Math.max(0.0, getConfig().getDouble("profession-bonuses.woodcutting.bonus-per-level", 0.50));
+
+        professionBonusCache.clear();
+        mmocoreReflectionTried = false;
+        mmocorePlayerDataHasMethod = null;
+        mmocorePlayerDataGetMethod = null;
+        mmocorePlayerDataHasLookupType = null;
+        mmocorePlayerDataGetLookupType = null;
+        mmocoreGetCollectionSkillsMethod = null;
+        mmocoreGetProfessionLevelMethod = null;
+    }
 
     private void loadIdentificationSettings() {
         identificationEnabled = getConfig().getBoolean("identification.enabled", true);
@@ -1045,6 +1137,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         weaponSwapLockLastBlockedMessage.remove(id);
         twoHandedAbilityLockLastBlockedMessage.remove(id);
         weaponSwapLastWeaponBeforeNonWeapon.remove(id);
+        professionBonusCache.remove(id);
         removeTpaRequestsFor(id, true);
         cancelTpaWarmupsFor(id, true);
         tpaCooldownUntil.remove(id);
@@ -1123,7 +1216,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onMonitorHeadOreExtraDrops(BlockBreakEvent event) {
-        if (internalBreakEvent || !equipmentBonusesEnabled) return;
+        if (internalBreakEvent || (!equipmentBonusesEnabled && !professionBonusesEnabled)) return;
         if (!headOreExtraBonusEnabled && !treeNodeExtraBonusEnabled) return;
 
         Player player = event.getPlayer();
@@ -1148,7 +1241,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         String dropId = pdc.get(headOreDropIdKey, PersistentDataType.STRING);
         if (dropType == null || dropType.isBlank() || dropId == null || dropId.isBlank()) return;
 
-        EquipmentBonuses bonuses = readEquipmentBonuses(player);
+        EquipmentBonuses bonuses = readCombinedBonuses(player);
         boolean isNode = nodeName != null;
         double chance = isNode ? bonuses.treeNodeExtra : bonuses.rareMinerals;
         if (isNode && !treeNodeExtraBonusEnabled) return;
@@ -1203,9 +1296,10 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         if (miningEnabled && lore.roturaMultiple > 0 && miningAllowed.contains(type) && isPickaxe(tool.getType())) {
             int extra = Math.min(lore.roturaMultiple, maxMiningExtra);
-            int broken = breakLine(player, block, tool, extra, miningAllowed);
+            int broken = breakMiningShape(player, block, tool, extra, miningAllowed, lore.miningShape);
             damageTool(player, tool, broken * durabilityCostBlock);
-            debug("Rotura múltiple: " + broken + " extra.");
+            MiningShapeSpec usedShape = lore.miningShape == null ? defaultMiningShapeSpec() : lore.miningShape;
+            debug("Rotura múltiple " + usedShape.shape + ": " + broken + " extra.");
             return;
         }
 
@@ -1243,6 +1337,93 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         int extraHarvested = handleOriginalCrop ? Math.max(0, harvested - 1) : harvested;
         damageTool(player, tool, extraHarvested * durabilityCostCrop);
         debug("Multi cosecha: " + harvested + " cultivos.");
+    }
+
+    private int breakMiningShape(Player player, Block original, ItemStack tool, int extra, Set<Material> allowed, MiningShapeSpec requestedShape) {
+        if (extra <= 0) return 0;
+
+        MiningShapeSpec shape = requestedShape == null ? defaultMiningShapeSpec() : requestedShape;
+        return switch (shape.shape) {
+            case LINE -> breakLine(player, original, tool, extra, allowed);
+            case PLANE -> breakAreaCandidates(player, original, tool, extra, allowed,
+                    collectPlaneBlocks(original, dominantFace(player.getEyeLocation().getDirection()), shape.width, shape.height));
+            case CUBE -> breakAreaCandidates(player, original, tool, extra, allowed,
+                    collectCubeBlocks(original, shape.width, shape.height, shape.depth));
+        };
+    }
+
+    private int breakAreaCandidates(Player player, Block original, ItemStack tool, int extra, Set<Material> allowed, List<Block> candidates) {
+        if (extra <= 0 || candidates.isEmpty()) return 0;
+
+        candidates.sort(Comparator
+                .comparingInt((Block block) -> blockDistanceSquared(original, block))
+                .thenComparingInt(Block::getY)
+                .thenComparingInt(Block::getX)
+                .thenComparingInt(Block::getZ));
+
+        int broken = 0;
+        for (Block candidate : candidates) {
+            if (broken >= extra) break;
+            if (!allowed.contains(candidate.getType())) continue;
+            if (breakExtraNaturally(player, candidate, tool)) broken++;
+        }
+        return broken;
+    }
+
+    private List<Block> collectPlaneBlocks(Block original, BlockFace face, int width, int height) {
+        List<Block> blocks = new ArrayList<>(Math.max(0, width * height - 1));
+        int startWidth = centeredStart(width);
+        int startHeight = centeredStart(height);
+
+        for (int widthIndex = 0; widthIndex < width; widthIndex++) {
+            int horizontalOffset = startWidth + widthIndex;
+            for (int heightIndex = 0; heightIndex < height; heightIndex++) {
+                int verticalOffset = startHeight + heightIndex;
+                if (horizontalOffset == 0 && verticalOffset == 0) continue;
+
+                Block candidate;
+                if (face == BlockFace.UP || face == BlockFace.DOWN) {
+                    candidate = original.getRelative(horizontalOffset, 0, verticalOffset);
+                } else if (face == BlockFace.EAST || face == BlockFace.WEST) {
+                    candidate = original.getRelative(0, verticalOffset, horizontalOffset);
+                } else {
+                    candidate = original.getRelative(horizontalOffset, verticalOffset, 0);
+                }
+                blocks.add(candidate);
+            }
+        }
+        return blocks;
+    }
+
+    private List<Block> collectCubeBlocks(Block original, int width, int height, int depth) {
+        List<Block> blocks = new ArrayList<>(Math.max(0, width * height * depth - 1));
+        int startX = centeredStart(width);
+        int startY = centeredStart(height);
+        int startZ = centeredStart(depth);
+
+        for (int xIndex = 0; xIndex < width; xIndex++) {
+            int x = startX + xIndex;
+            for (int yIndex = 0; yIndex < height; yIndex++) {
+                int y = startY + yIndex;
+                for (int zIndex = 0; zIndex < depth; zIndex++) {
+                    int z = startZ + zIndex;
+                    if (x == 0 && y == 0 && z == 0) continue;
+                    blocks.add(original.getRelative(x, y, z));
+                }
+            }
+        }
+        return blocks;
+    }
+
+    private int centeredStart(int size) {
+        return -((Math.max(1, size) - 1) / 2);
+    }
+
+    private int blockDistanceSquared(Block origin, Block other) {
+        int dx = other.getX() - origin.getX();
+        int dy = other.getY() - origin.getY();
+        int dz = other.getZ() - origin.getZ();
+        return dx * dx + dy * dy + dz * dz;
     }
 
     private int breakLine(Player player, Block original, ItemStack tool, int extra, Set<Material> allowed) {
@@ -1432,7 +1613,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private void rollCustomDrops(Player player, Block block, ItemStack tool) {
         if (!customDropsEnabled || customDrops.isEmpty() || player == null || block == null) return;
 
-        EquipmentBonuses bonuses = equipmentBonusesEnabled && agricultureRareBonusEnabled ? readEquipmentBonuses(player) : EquipmentBonuses.EMPTY;
+        EquipmentBonuses bonuses = agricultureRareBonusEnabled ? readCombinedBonuses(player) : EquipmentBonuses.EMPTY;
 
         for (CustomDropDefinition def : customDrops) {
             if (!matchesCustomDrop(def, player, block, tool)) continue;
@@ -2522,6 +2703,9 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             Matcher rotura = roturaPattern.matcher(clean);
             if (rotura.find()) result.roturaMultiple = Math.max(result.roturaMultiple, parseIntSafe(rotura.group(1)));
 
+            Matcher shape = miningShapePattern.matcher(clean);
+            if (shape.find()) result.miningShape = parseMiningShapeSpec(shape.group(1));
+
             Matcher cosecha = cosechaPattern.matcher(clean);
             if (cosecha.find()) result.multiCosecha = Math.max(result.multiCosecha, parseIntSafe(cosecha.group(1)));
 
@@ -2532,31 +2716,208 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
     private EquipmentBonuses readEquipmentBonuses(Player player) {
-        if (player == null || !equipmentBonusesEnabled) return EquipmentBonuses.EMPTY;
-
         EquipmentBonuses result = new EquipmentBonuses();
-        ItemStack[] armor = player.getInventory().getArmorContents();
-        if (armor == null) return result;
+        if (player == null || !equipmentBonusesEnabled) return result;
 
-        for (ItemStack piece : armor) {
-            readEquipmentBonusLore(piece, result);
+        ItemStack[] armor = player.getInventory().getArmorContents();
+        if (armor != null) {
+            for (ItemStack piece : armor) {
+                readEquipmentBonusLore(piece, result, true, true, true);
+            }
+        }
+
+        if (mainHandToolBonusesEnabled) {
+            ItemStack mainHand = player.getInventory().getItemInMainHand();
+            if (mainHand != null && mainHand.getType() != Material.AIR) {
+                Material material = mainHand.getType();
+                boolean agriculture = !mainHandToolRequireMatchingType || isHoe(material);
+                boolean minerals = !mainHandToolRequireMatchingType || isPickaxe(material);
+                boolean treeNodes = !mainHandToolRequireMatchingType || isAxe(material);
+                readEquipmentBonusLore(mainHand, result, agriculture, minerals, treeNodes);
+            }
         }
 
         result.cap(maxEquipmentBonusPercent);
         return result;
     }
 
-    private void readEquipmentBonusLore(ItemStack item, EquipmentBonuses result) {
+    private EquipmentBonuses readArmorBonuses(Player player) {
+        EquipmentBonuses result = new EquipmentBonuses();
+        if (player == null || !equipmentBonusesEnabled) return result;
+        ItemStack[] armor = player.getInventory().getArmorContents();
+        if (armor != null) {
+            for (ItemStack piece : armor) readEquipmentBonusLore(piece, result, true, true, true);
+        }
+        result.cap(maxEquipmentBonusPercent);
+        return result;
+    }
+
+    private EquipmentBonuses readMainHandToolBonuses(Player player) {
+        EquipmentBonuses result = new EquipmentBonuses();
+        if (player == null || !equipmentBonusesEnabled || !mainHandToolBonusesEnabled) return result;
+
+        ItemStack mainHand = player.getInventory().getItemInMainHand();
+        if (mainHand == null || mainHand.getType() == Material.AIR) return result;
+        Material material = mainHand.getType();
+        boolean agriculture = !mainHandToolRequireMatchingType || isHoe(material);
+        boolean minerals = !mainHandToolRequireMatchingType || isPickaxe(material);
+        boolean treeNodes = !mainHandToolRequireMatchingType || isAxe(material);
+        readEquipmentBonusLore(mainHand, result, agriculture, minerals, treeNodes);
+        result.cap(maxEquipmentBonusPercent);
+        return result;
+    }
+
+    private EquipmentBonuses readCombinedBonuses(Player player) {
+        EquipmentBonuses result = new EquipmentBonuses();
+        result.add(readEquipmentBonuses(player));
+        result.add(readProfessionBonuses(player));
+        result.cap(maxCombinedBonusPercent);
+        return result;
+    }
+
+    private void readEquipmentBonusLore(ItemStack item, EquipmentBonuses result,
+                                        boolean agriculture, boolean minerals, boolean treeNodes) {
         if (item == null || item.getType() == Material.AIR || result == null) return;
         ItemMeta meta = item.getItemMeta();
         if (meta == null || !meta.hasLore() || meta.getLore() == null) return;
 
         for (String line : meta.getLore()) {
             String clean = normalize(ChatColor.stripColor(line));
-            result.agricultureRareDrops += matchPercent(agricultureRareBonusPattern, clean);
-            result.rareMinerals += matchPercent(rareMineralsBonusPattern, clean);
-            result.treeNodeExtra += matchPercent(treeNodeExtraBonusPattern, clean);
+            if (agriculture) result.agricultureRareDrops += matchPercent(agricultureRareBonusPattern, clean);
+            if (minerals) result.rareMinerals += matchPercent(rareMineralsBonusPattern, clean);
+            if (treeNodes) result.treeNodeExtra += matchPercent(treeNodeExtraBonusPattern, clean);
         }
+    }
+
+    private EquipmentBonuses readProfessionBonuses(Player player) {
+        EquipmentBonuses result = new EquipmentBonuses();
+        ProfessionSnapshot snapshot = getProfessionSnapshot(player);
+        result.rareMinerals = snapshot.miningBonus;
+        result.agricultureRareDrops = snapshot.farmingBonus;
+        result.treeNodeExtra = snapshot.woodcuttingBonus;
+        return result;
+    }
+
+    private ProfessionSnapshot getProfessionSnapshot(Player player) {
+        if (player == null || !professionBonusesEnabled) return ProfessionSnapshot.EMPTY;
+
+        long now = System.currentTimeMillis();
+        ProfessionSnapshot cached = professionBonusCache.get(player.getUniqueId());
+        if (cached != null && professionBonusCacheMs > 0L
+                && now - cached.createdAtMs <= professionBonusCacheMs) {
+            return cached;
+        }
+
+        // Algunos plugins resuelven placeholders fuera del hilo principal. En ese caso
+        // devolvemos el último valor seguro en caché y no tocamos datos vivos de MMOCore.
+        if (!Bukkit.isPrimaryThread()) return cached == null ? ProfessionSnapshot.EMPTY : cached;
+
+        int miningLevel = getMMOCoreProfessionLevel(player, miningProfessionId);
+        int farmingLevel = getMMOCoreProfessionLevel(player, farmingProfessionId);
+        int woodcuttingLevel = getMMOCoreProfessionLevel(player, woodcuttingProfessionId);
+
+        ProfessionSnapshot snapshot = new ProfessionSnapshot(
+                now,
+                miningLevel,
+                farmingLevel,
+                woodcuttingLevel,
+                professionBonusForLevel(miningLevel, miningBonusPerLevel),
+                professionBonusForLevel(farmingLevel, farmingBonusPerLevel),
+                professionBonusForLevel(woodcuttingLevel, woodcuttingBonusPerLevel)
+        );
+        professionBonusCache.put(player.getUniqueId(), snapshot);
+        return snapshot;
+    }
+
+    private double professionBonusForLevel(int level, double bonusPerLevel) {
+        int countedLevels = professionBonusCountStartingLevel ? Math.max(0, level) : Math.max(0, level - 1);
+        return Math.min(professionBonusMaxPercent, countedLevels * Math.max(0.0, bonusPerLevel));
+    }
+
+    private int getMMOCoreProfessionLevel(Player player, String professionId) {
+        if (player == null || professionId == null || professionId.isBlank()) return 0;
+        if (!initializeMMOCoreReflection()) return 0;
+
+        try {
+            if (mmocorePlayerDataHasMethod != null) {
+                Object hasArgument = mmocoreLookupArgument(player, mmocorePlayerDataHasLookupType);
+                Object loaded = mmocorePlayerDataHasMethod.invoke(null, hasArgument);
+                if (loaded instanceof Boolean bool && !bool) return 0;
+            }
+
+            Object getArgument = mmocoreLookupArgument(player, mmocorePlayerDataGetLookupType);
+            Object playerData = mmocorePlayerDataGetMethod.invoke(null, getArgument);
+            if (playerData == null) return 0;
+
+            Object professions = mmocoreGetCollectionSkillsMethod.invoke(playerData);
+            if (professions == null) return 0;
+
+            Object value = mmocoreGetProfessionLevelMethod.invoke(professions, professionId);
+            return value instanceof Number number ? Math.max(0, number.intValue()) : 0;
+        } catch (Throwable throwable) {
+            debug("No se pudo leer la profesión '" + professionId + "' de " + player.getName() + ": " + throwable.getClass().getSimpleName());
+            return 0;
+        }
+    }
+
+    private boolean initializeMMOCoreReflection() {
+        if (mmocoreReflectionTried) return mmocorePlayerDataGetMethod != null
+                && mmocoreGetCollectionSkillsMethod != null && mmocoreGetProfessionLevelMethod != null;
+        mmocoreReflectionTried = true;
+
+        Plugin mmocore = mmocorePluginName == null ? null : Bukkit.getPluginManager().getPlugin(mmocorePluginName);
+        if (mmocore == null || !mmocore.isEnabled()) {
+            debug("MMOCore no está cargado; bonus de profesiones desactivados temporalmente.");
+            return false;
+        }
+
+        try {
+            ClassLoader loader = mmocore.getClass().getClassLoader();
+            Class<?> playerDataClass = Class.forName("net.Indyuce.mmocore.api.player.PlayerData", false, loader);
+
+            for (Class<?> lookupType : List.of(Player.class, UUID.class)) {
+                if (mmocorePlayerDataGetMethod == null) {
+                    try {
+                        mmocorePlayerDataGetMethod = playerDataClass.getMethod("get", lookupType);
+                        mmocorePlayerDataGetLookupType = lookupType;
+                    } catch (NoSuchMethodException ignored) {
+                    }
+                }
+                if (mmocorePlayerDataHasMethod == null) {
+                    try {
+                        mmocorePlayerDataHasMethod = playerDataClass.getMethod("has", lookupType);
+                        mmocorePlayerDataHasLookupType = lookupType;
+                    } catch (NoSuchMethodException ignored) {
+                    }
+                }
+            }
+
+            if (mmocorePlayerDataGetMethod == null) {
+                getLogger().warning("No encontré PlayerData.get(Player/UUID) en MMOCore. Los bonus de profesión no podrán leerse.");
+                return false;
+            }
+
+            mmocoreGetCollectionSkillsMethod = playerDataClass.getMethod("getCollectionSkills");
+            Class<?> professionsClass = mmocoreGetCollectionSkillsMethod.getReturnType();
+            mmocoreGetProfessionLevelMethod = professionsClass.getMethod("getLevel", String.class);
+            return true;
+        } catch (Throwable throwable) {
+            getLogger().warning("No se pudo enlazar la API de MMOCore para profesiones: " + throwable.getClass().getSimpleName()
+                    + (throwable.getMessage() == null ? "" : " - " + throwable.getMessage()));
+            mmocorePlayerDataGetMethod = null;
+            mmocoreGetCollectionSkillsMethod = null;
+            mmocoreGetProfessionLevelMethod = null;
+            return false;
+        }
+    }
+
+    private Object mmocoreLookupArgument(Player player, Class<?> lookupType) {
+        return lookupType == UUID.class ? player.getUniqueId() : player;
+    }
+
+    private String normalizeProfessionId(String raw) {
+        if (raw == null) return "";
+        return raw.trim().toLowerCase(Locale.ROOT);
     }
 
     private double matchPercent(Pattern pattern, String cleanLine) {
@@ -2581,6 +2942,66 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         } catch (NumberFormatException ignored) {
             return 0;
         }
+    }
+
+    private MiningShapeSpec defaultMiningShapeSpec() {
+        return switch (defaultMiningShape) {
+            case LINE -> new MiningShapeSpec(MiningShape.LINE, 1, 1, 1);
+            case PLANE -> new MiningShapeSpec(MiningShape.PLANE,
+                    Math.min(3, miningShapeMaxWidth), Math.min(3, miningShapeMaxHeight), 1);
+            case CUBE -> new MiningShapeSpec(MiningShape.CUBE,
+                    Math.min(3, miningShapeMaxWidth), Math.min(3, miningShapeMaxHeight), Math.min(3, miningShapeMaxDepth));
+        };
+    }
+
+    private MiningShape parseMiningShapeName(String raw, MiningShape fallback) {
+        String clean = normalizeLoose(raw).toLowerCase(Locale.ROOT);
+        if (clean.contains("cubo") || clean.contains("cube")) return MiningShape.CUBE;
+        if (clean.contains("plano") || clean.contains("plane") || clean.contains("cuadrado") || clean.contains("square")
+                || clean.contains("rectangulo") || clean.contains("rectangle") || clean.contains("area")) return MiningShape.PLANE;
+        if (clean.contains("linea") || clean.contains("line")) return MiningShape.LINE;
+        return fallback == null ? MiningShape.LINE : fallback;
+    }
+
+    private MiningShapeSpec parseMiningShapeSpec(String raw) {
+        MiningShape shape = parseMiningShapeName(raw, defaultMiningShape);
+        String clean = normalizeLoose(raw).toLowerCase(Locale.ROOT);
+
+        int width = shape == MiningShape.LINE ? 1 : 3;
+        int height = shape == MiningShape.LINE ? 1 : 3;
+        int depth = shape == MiningShape.CUBE ? 3 : 1;
+        if (shape == MiningShape.PLANE && (clean.contains("rectangulo") || clean.contains("rectangle"))) {
+            width = 4;
+            height = 4;
+        }
+
+        Matcher dimensions = Pattern.compile("(\\d+)\\s*x\\s*(\\d+)(?:\\s*x\\s*(\\d+))?", Pattern.CASE_INSENSITIVE).matcher(clean);
+        if (dimensions.find()) {
+            width = parseIntSafe(dimensions.group(1));
+            height = parseIntSafe(dimensions.group(2));
+            if (shape == MiningShape.CUBE) {
+                depth = dimensions.group(3) == null ? height : parseIntSafe(dimensions.group(3));
+            }
+        } else {
+            Matcher singleDimension = Pattern.compile("\\b(\\d+)\\b").matcher(clean);
+            if (singleDimension.find()) {
+                int size = parseIntSafe(singleDimension.group(1));
+                if (shape != MiningShape.LINE) {
+                    width = size;
+                    height = size;
+                    if (shape == MiningShape.CUBE) depth = size;
+                }
+            }
+        }
+
+        width = Math.max(1, Math.min(width, miningShapeMaxWidth));
+        height = Math.max(1, Math.min(height, miningShapeMaxHeight));
+        depth = Math.max(1, Math.min(depth, miningShapeMaxDepth));
+        return new MiningShapeSpec(shape, width, height, depth);
+    }
+
+    private boolean isHoe(Material mat) {
+        return mat.name().endsWith("_HOE");
     }
 
     private boolean isPickaxe(Material mat) {
@@ -3050,6 +3471,72 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (debug) getLogger().info("[DEBUG] " + msg);
     }
 
+    String resolvePlaceholder(Player player, String identifier) {
+        if (player == null || identifier == null || identifier.isBlank()) return "";
+
+        String key = normalize(identifier).toLowerCase(Locale.ROOT).replace(' ', '_');
+        boolean formatted = false;
+        for (String suffix : List.of("_formatted", "_formateado", "_con_signo")) {
+            if (key.endsWith(suffix)) {
+                formatted = true;
+                key = key.substring(0, key.length() - suffix.length());
+                break;
+            }
+        }
+
+        ProfessionKind kind = null;
+        String metric = null;
+        for (ProfessionKind candidate : ProfessionKind.values()) {
+            for (String alias : candidate.aliases) {
+                String prefix = alias + "_";
+                if (key.startsWith(prefix)) {
+                    kind = candidate;
+                    metric = key.substring(prefix.length());
+                    break;
+                }
+            }
+            if (kind != null) break;
+        }
+        if (kind == null || metric == null) return null;
+
+        ProfessionSnapshot professions = getProfessionSnapshot(player);
+        if (metric.equals("level") || metric.equals("nivel")) {
+            return Integer.toString(kind.level(professions));
+        }
+
+        EquipmentBonuses armor = readArmorBonuses(player);
+        EquipmentBonuses tool = readMainHandToolBonuses(player);
+        EquipmentBonuses equipment = new EquipmentBonuses();
+        equipment.add(armor);
+        equipment.add(tool);
+        equipment.cap(maxEquipmentBonusPercent);
+
+        double value;
+        switch (metric) {
+            case "bonus", "profession_bonus", "bonus_profesion", "bonus_profession" -> value = kind.professionBonus(professions);
+            case "armor_bonus", "bonus_armadura" -> value = kind.equipmentBonus(armor);
+            case "tool_bonus", "bonus_herramienta" -> value = kind.equipmentBonus(tool);
+            case "equipment_bonus", "bonus_equipo" -> value = kind.equipmentBonus(equipment);
+            case "total_bonus", "bonus_total" -> value = Math.min(maxCombinedBonusPercent,
+                    kind.professionBonus(professions) + kind.equipmentBonus(equipment));
+            default -> {
+                return null;
+            }
+        }
+
+        String number = formatPercentNumber(value);
+        return formatted ? "+" + number + "%" : number;
+    }
+
+    private String formatPercentNumber(double value) {
+        String formatted = String.format(Locale.US, "%.2f", Math.max(0.0, value));
+        while (formatted.contains(".") && formatted.endsWith("0")) {
+            formatted = formatted.substring(0, formatted.length() - 1);
+        }
+        if (formatted.endsWith(".")) formatted = formatted.substring(0, formatted.length() - 1);
+        return formatted;
+    }
+
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (Set.of("tpa", "tpaccept", "tpdeny", "aceptartp", "rechazartp", "tpacancel").contains(command.getName().toLowerCase(Locale.ROOT))) {
@@ -3198,12 +3685,78 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         Set<Material> blocks = EnumSet.noneOf(Material.class);
     }
 
+    private enum ProfessionKind {
+        MINING(List.of("mining", "minero")),
+        FARMING(List.of("farming", "agricultor")),
+        WOODCUTTING(List.of("woodcutting", "lenador"));
+
+        final List<String> aliases;
+
+        ProfessionKind(List<String> aliases) {
+            this.aliases = aliases;
+        }
+
+        int level(ProfessionSnapshot snapshot) {
+            return switch (this) {
+                case MINING -> snapshot.miningLevel;
+                case FARMING -> snapshot.farmingLevel;
+                case WOODCUTTING -> snapshot.woodcuttingLevel;
+            };
+        }
+
+        double professionBonus(ProfessionSnapshot snapshot) {
+            return switch (this) {
+                case MINING -> snapshot.miningBonus;
+                case FARMING -> snapshot.farmingBonus;
+                case WOODCUTTING -> snapshot.woodcuttingBonus;
+            };
+        }
+
+        double equipmentBonus(EquipmentBonuses bonuses) {
+            return switch (this) {
+                case MINING -> bonuses.rareMinerals;
+                case FARMING -> bonuses.agricultureRareDrops;
+                case WOODCUTTING -> bonuses.treeNodeExtra;
+            };
+        }
+    }
+
+    private static final class ProfessionSnapshot {
+        static final ProfessionSnapshot EMPTY = new ProfessionSnapshot(0L, 0, 0, 0, 0.0, 0.0, 0.0);
+
+        final long createdAtMs;
+        final int miningLevel;
+        final int farmingLevel;
+        final int woodcuttingLevel;
+        final double miningBonus;
+        final double farmingBonus;
+        final double woodcuttingBonus;
+
+        ProfessionSnapshot(long createdAtMs, int miningLevel, int farmingLevel, int woodcuttingLevel,
+                           double miningBonus, double farmingBonus, double woodcuttingBonus) {
+            this.createdAtMs = createdAtMs;
+            this.miningLevel = miningLevel;
+            this.farmingLevel = farmingLevel;
+            this.woodcuttingLevel = woodcuttingLevel;
+            this.miningBonus = Math.max(0.0, miningBonus);
+            this.farmingBonus = Math.max(0.0, farmingBonus);
+            this.woodcuttingBonus = Math.max(0.0, woodcuttingBonus);
+        }
+    }
+
     private static final class EquipmentBonuses {
         static final EquipmentBonuses EMPTY = new EquipmentBonuses();
 
         double agricultureRareDrops = 0.0;
         double rareMinerals = 0.0;
         double treeNodeExtra = 0.0;
+
+        void add(EquipmentBonuses other) {
+            if (other == null) return;
+            agricultureRareDrops += other.agricultureRareDrops;
+            rareMinerals += other.rareMinerals;
+            treeNodeExtra += other.treeNodeExtra;
+        }
 
         void cap(double max) {
             if (max <= 0.0) {
@@ -3218,10 +3771,31 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    private enum MiningShape {
+        LINE,
+        PLANE,
+        CUBE
+    }
+
+    private static final class MiningShapeSpec {
+        final MiningShape shape;
+        final int width;
+        final int height;
+        final int depth;
+
+        MiningShapeSpec(MiningShape shape, int width, int height, int depth) {
+            this.shape = shape == null ? MiningShape.LINE : shape;
+            this.width = Math.max(1, width);
+            this.height = Math.max(1, height);
+            this.depth = Math.max(1, depth);
+        }
+    }
+
     private static final class ToolLore {
         int talaMultiple = 0;
         int roturaMultiple = 0;
         int multiCosecha = 0;
+        MiningShapeSpec miningShape;
         boolean autoReplantar = false;
 
         boolean hasAny() {

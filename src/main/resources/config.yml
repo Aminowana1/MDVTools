@@ -1,4 +1,4 @@
-# MDVTools 1.0.18
+# MDVTools 1.0.19
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -279,6 +279,35 @@ custom-drops:
   # category: WOODCUTTING
   # category: NONE   -> no recibe bonus relativo
   # category: AUTO   -> detecta según cultivo, tronco o bloque minable
+
+
+# ==========================================================
+# CASTEO DE OFFHAND CON LA TECLA F
+#
+# Permite que un MMOItem situado en la mano secundaria use
+# una habilidad con mode: SWAP_ITEMS sin intercambiar las manos.
+#
+# Flujo:
+# 1. MythicLib/MMOItems recibe la tecla F y ejecuta SWAP_ITEMS.
+# 2. MDVTools cancela únicamente el intercambio vanilla.
+#
+# Es event-driven y económico: solo se ejecuta al pulsar F.
+# No usa tareas repetitivas ni revisa inventarios cada tick.
+# ==========================================================
+offhand-swap-cast:
+  enabled: false
+
+  # Formatos admitidos:
+  # - 'TIPO:ID'   -> solo un MMOItem exacto
+  # - 'TIPO:*'    -> todos los MMOItems de ese tipo
+  # - '*:ID'      -> ese ID sin importar el tipo
+  #
+  # Se recomienda usar siempre TIPO:ID para no bloquear F
+  # en objetos que sí deban intercambiarse normalmente.
+  mmoitems: []
+  # Ejemplo:
+  # mmoitems:
+  #   - 'OFFHAND:TALISMAN_FUNEBRE'
 
 
 # Bloqueo corto al cambiar a un arma MMOItems.

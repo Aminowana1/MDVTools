@@ -214,6 +214,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, WeaponSwapItemIdentity> weaponSwapLastWeaponBeforeNonWeapon = new HashMap<>();
     private final Set<String> weaponSwapLockHookedEvents = new HashSet<>();
 
+    // Permite usar SWAP_ITEMS de MMOItems con objetos concretos en offhand
+    // sin realizar el intercambio vanilla de manos.
+    private boolean offhandSwapCastEnabled;
+    private Set<String> offhandSwapCastMmoItems = new HashSet<>();
+
     private boolean twoHandedAbilityLockEnabled;
     private boolean twoHandedAbilityLockOnlyWeaponTypes;
     private boolean twoHandedAbilityLockUseMmoItemsStat;
@@ -436,6 +441,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         loadIdentificationSettings();
         loadCrossbowAutoReloadSettings();
         loadWeaponSwapLockSettings();
+        loadOffhandSwapCastSettings();
         loadTwoHandedAbilityLockSettings();
         loadAbilityDurabilityCostSettings();
         loadCustomDurabilityProtectionSettings();
@@ -663,6 +669,29 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+
+    private void loadOffhandSwapCastSettings() {
+        offhandSwapCastEnabled = getConfig().getBoolean("offhand-swap-cast.enabled", false);
+        offhandSwapCastMmoItems = new HashSet<>();
+
+        for (String raw : getConfig().getStringList("offhand-swap-cast.mmoitems")) {
+            if (raw == null) continue;
+            String entry = raw.trim().toUpperCase(Locale.ROOT).replace(" ", "");
+            if (entry.isBlank()) continue;
+
+            int separator = entry.indexOf(':');
+            if (separator <= 0 || separator >= entry.length() - 1) {
+                getLogger().warning("Entrada inválida en offhand-swap-cast.mmoitems: " + raw
+                        + " (usa TIPO:ID, TIPO:* o *:ID)");
+                continue;
+            }
+
+            offhandSwapCastMmoItems.add(entry);
+        }
+
+        debug("offhand-swap-cast cargado: enabled=" + offhandSwapCastEnabled
+                + ", items=" + offhandSwapCastMmoItems.size());
+    }
 
     private void loadTwoHandedAbilityLockSettings() {
         twoHandedAbilityLockEnabled = getConfig().getBoolean("two-handed-ability-lock.enabled", true);
@@ -1100,6 +1129,31 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         ItemStack oldItem = inventory.getItem(event.getPreviousSlot());
         ItemStack newItem = inventory.getItem(event.getNewSlot());
         handlePossibleWeaponSwap(player, oldItem, newItem);
+    }
+
+    /**
+     * Deja que MythicLib/MMOItems procese primero el trigger SWAP_ITEMS y,
+     * únicamente para los MMOItems configurados en la mano secundaria,
+     * cancela después el intercambio vanilla de manos.
+     *
+     * Es completamente event-driven: no usa tareas repetitivas ni recorre
+     * inventarios. Solo inspecciona el item de offhand al pulsar F.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onOffhandSwapCast(PlayerSwapHandItemsEvent event) {
+        if (!offhandSwapCastEnabled || offhandSwapCastMmoItems.isEmpty()) return;
+
+        Player player = event.getPlayer();
+        if (player == null) return;
+
+        // Antes de que el evento termine, el inventario conserva el item real
+        // que el jugador tiene actualmente en la mano secundaria.
+        ItemStack offhand = player.getInventory().getItemInOffHand();
+        if (!isConfiguredOffhandSwapCastItem(offhand)) return;
+
+        // MythicLib ya recibió SWAP_ITEMS en una prioridad anterior.
+        // Cancelamos únicamente el movimiento vanilla de los objetos.
+        event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -2601,6 +2655,22 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
                 if (debug) getLogger().warning("Partícula inválida para weapon-swap-lock: " + weaponSwapLockReadyParticleName);
             }
         }
+    }
+
+    private boolean isConfiguredOffhandSwapCastItem(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) return false;
+
+        String type = readMmoItemTypeId(item);
+        String id = readMmoItemString(item, "MMOITEMS_ITEM_ID");
+        if (type == null || type.isBlank() || id == null || id.isBlank()) return false;
+
+        type = type.toUpperCase(Locale.ROOT);
+        id = id.toUpperCase(Locale.ROOT);
+
+        return offhandSwapCastMmoItems.contains(type + ":" + id)
+                || offhandSwapCastMmoItems.contains(type + ":*")
+                || offhandSwapCastMmoItems.contains("*:" + id)
+                || offhandSwapCastMmoItems.contains("*:*");
     }
 
     private boolean isWeaponSwapLockWeapon(ItemStack item) {

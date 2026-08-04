@@ -1,0 +1,26 @@
+MDVTools 1.0.19
+================
+
+NUEVO: CASTEO DE OFFHAND CON F SIN INTERCAMBIAR MANOS
+
+- Permite usar habilidades MMOItems con mode: SWAP_ITEMS desde la mano secundaria.
+- MythicLib/MMOItems procesa primero la habilidad.
+- MDVTools cancela después únicamente el intercambio vanilla de las manos.
+- Solo afecta a los MMOItems configurados mediante TIPO:ID.
+- Admite comodines TIPO:* y *:ID, aunque se recomienda TIPO:ID exacto.
+- No altera la tecla F cuando el offhand no coincide con la lista.
+- Implementación event-driven: no usa tareas repetitivas, timers ni escaneos de inventario.
+- Compatible con /mdvtools reload para actualizar la lista y activar/desactivar el sistema.
+
+ACTUALIZACIÓN
+
+1. Reemplaza MDVTools-1.0.18.jar por MDVTools-1.0.19.jar.
+2. Agrega el bloque de MDVTools_1.0.19_config_addition.yml a tu config.yml actual.
+3. Cambia OFFHAND:TALISMAN_FUNEBRE por el TIPO:ID real del objeto.
+4. Mantén la habilidad del MMOItem con mode: SWAP_ITEMS.
+5. Ejecuta /mdvtools reload o reinicia el servidor.
+
+IMPORTANTE
+
+MMOCore no debe seguir usando F normal como tecla de apertura del modo de casteo.
+La configuración recomendada es Shift + F para MMOCore y F para los offhands MMOItems.

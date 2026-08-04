@@ -1,0 +1,16 @@
+# MDVTools 1.0.19 - agrega este bloque a tu config.yml actual.
+#
+# El MMOItem debe tener una habilidad con:
+# mode: SWAP_ITEMS
+#
+# Reemplaza OFFHAND:TALISMAN_FUNEBRE por el TIPO:ID real.
+
+offhand-swap-cast:
+  enabled: true
+
+  # Formatos admitidos:
+  # - 'TIPO:ID'
+  # - 'TIPO:*'
+  # - '*:ID'
+  mmoitems:
+    - 'OFFHAND:TALISMAN_FUNEBRE'

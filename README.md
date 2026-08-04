@@ -1,4 +1,18 @@
-# MDVTools 1.0.18
+# MDVTools 1.0.19
+
+## MDVTools 1.0.19 - Casteo de offhand con F
+
+Permite que objetos MMOItems configurados en la mano secundaria ejecuten una habilidad con `mode: SWAP_ITEMS` sin realizar el intercambio vanilla de manos. MythicLib/MMOItems procesa primero la habilidad y MDVTools cancela después únicamente el swap. El sistema es event-driven y se limita a una comprobación del offhand al pulsar F.
+
+Configuración:
+
+```yaml
+offhand-swap-cast:
+  enabled: true
+  mmoitems:
+    - OFFHAND:TALISMAN_FUNEBRE
+```
+
 
 ## MDVTools 1.0.18 - Objetos Imperecederos y Reliquias
 
@@ -214,7 +228,7 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.18.jar`.
+El `.jar` queda en `target/MDVTools-1.0.19.jar`.
 
 
 ## MDVTools 1.0.9

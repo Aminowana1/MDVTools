@@ -231,6 +231,13 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private long abilityDurabilityDedupeWindowMs;
     private final Map<UUID, AbilityDurabilityCharge> abilityDurabilityLastCharge = new HashMap<>();
 
+    // Protección event-driven para la durabilidad personalizada de MMOItems.
+    // Cualquier item con unbreakable: true puede conservar su durabilidad custom intacta.
+    private boolean customDurabilityProtectionEnabled;
+    private boolean customDurabilityProtectionUseItemMeta;
+    private boolean customDurabilityProtectionUseMmoItemsNbt;
+    private final Set<String> customDurabilityProtectionHookedEvents = new HashSet<>();
+
     private boolean mmoNbtReflectionTried;
     private Class<?> mmoNbtItemClass;
     private Method mmoNbtGetMethod;
@@ -299,6 +306,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         loadSettings();
         Bukkit.getPluginManager().registerEvents(this, this);
         registerWeaponSwapLockExternalEvents();
+        registerCustomDurabilityProtectionEvent();
         registerPlaceholderExpansion();
         getLogger().info("MDVTools activado.");
     }
@@ -430,6 +438,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         loadWeaponSwapLockSettings();
         loadTwoHandedAbilityLockSettings();
         loadAbilityDurabilityCostSettings();
+        loadCustomDurabilityProtectionSettings();
         loadCustomDropBehaviorSettings();
         loadCustomDrops();
 
@@ -711,6 +720,12 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
 
+
+    private void loadCustomDurabilityProtectionSettings() {
+        customDurabilityProtectionEnabled = getConfig().getBoolean("custom-durability-protection.enabled", true);
+        customDurabilityProtectionUseItemMeta = getConfig().getBoolean("custom-durability-protection.detect.item-meta-unbreakable", true);
+        customDurabilityProtectionUseMmoItemsNbt = getConfig().getBoolean("custom-durability-protection.detect.mmoitems-unbreakable-stat", true);
+    }
 
     private void loadAbilityDurabilityCostSettings() {
         abilityDurabilityCostEnabled = getConfig().getBoolean("ability-durability-cost.enabled", true);
@@ -1949,6 +1964,113 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
 
 
+    /**
+     * Conecta MDVTools al evento cancelable de daño de durabilidad custom de MMOItems.
+     *
+     * Se registra por reflexión para mantener MMOItems como softdepend y no exigir
+     * su API como dependencia de compilación. No hay tareas periódicas ni escaneo
+     * de inventarios: solo se ejecuta cuando MMOItems intenta gastar durabilidad.
+     */
+    @SuppressWarnings("unchecked")
+    private void registerCustomDurabilityProtectionEvent() {
+        final String className = "net.Indyuce.mmoitems.api.event.item.CustomDurabilityDamage";
+        if (customDurabilityProtectionHookedEvents.contains(className)) return;
+
+        try {
+            Class<?> rawClass = Class.forName(className);
+            if (!Event.class.isAssignableFrom(rawClass)) {
+                if (debug) getLogger().warning("No registré " + className + " porque no extiende Bukkit Event.");
+                return;
+            }
+
+            Class<? extends Event> eventClass = (Class<? extends Event>) rawClass;
+            EventExecutor executor = (listener, event) -> {
+                try {
+                    handleCustomDurabilityProtectionEvent(event);
+                } catch (Throwable throwable) {
+                    if (debug) {
+                        getLogger().warning("Error protegiendo durabilidad custom en " + event.getEventName()
+                                + ": " + throwable.getClass().getSimpleName()
+                                + (throwable.getMessage() == null ? "" : " - " + throwable.getMessage()));
+                    }
+                }
+            };
+
+            Bukkit.getPluginManager().registerEvent(eventClass, this, EventPriority.HIGHEST, executor, this, false);
+            customDurabilityProtectionHookedEvents.add(className);
+            getLogger().info("Protección de durabilidad custom conectada a MMOItems.");
+        } catch (ClassNotFoundException ignored) {
+            debug("Protección de durabilidad custom: evento de MMOItems no encontrado.");
+        } catch (Throwable throwable) {
+            getLogger().warning("No pude registrar la protección de durabilidad custom: "
+                    + throwable.getClass().getSimpleName()
+                    + (throwable.getMessage() == null ? "" : " - " + throwable.getMessage()));
+        }
+    }
+
+    private void handleCustomDurabilityProtectionEvent(Event event) {
+        if (!customDurabilityProtectionEnabled) return;
+        if (!(event instanceof Cancellable cancellable) || cancellable.isCancelled()) return;
+
+        ItemStack item = extractItemFromCustomDurabilityEvent(event);
+        if (!isCustomDurabilityProtected(item)) return;
+
+        cancellable.setCancelled(true);
+    }
+
+    private ItemStack extractItemFromCustomDurabilityEvent(Event event) {
+        if (event == null) return null;
+
+        try {
+            // CustomDurabilityDamage#getItem() -> CustomDurabilityItem
+            Method getSourceItem = event.getClass().getMethod("getItem");
+            Object sourceItem = getSourceItem.invoke(event);
+            if (sourceItem == null) return null;
+
+            // DurabilityItem#getNBTItem() -> NBTItem
+            Method getNbtItem = sourceItem.getClass().getMethod("getNBTItem");
+            Object nbtItem = getNbtItem.invoke(sourceItem);
+            if (nbtItem == null) return null;
+
+            // NBTItem#getItem() -> ItemStack
+            Method getItem = nbtItem.getClass().getMethod("getItem");
+            Object value = getItem.invoke(nbtItem);
+            return value instanceof ItemStack stack ? stack : null;
+        } catch (Throwable throwable) {
+            if (debug) {
+                getLogger().warning("No pude extraer el item del evento de durabilidad custom: "
+                        + throwable.getClass().getSimpleName()
+                        + (throwable.getMessage() == null ? "" : " - " + throwable.getMessage()));
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Marcador universal de objetos eternos/reliquias.
+     *
+     * No depende del ID, nombre, tipo, tier ni familia del modificador. Por eso
+     * funciona igual para melee, rango, magia, soporte, armaduras o reliquias:
+     * basta con que el resultado final tenga unbreakable: true.
+     */
+    private boolean isCustomDurabilityProtected(ItemStack item) {
+        if (!customDurabilityProtectionEnabled || !isRealItem(item)) return false;
+
+        if (customDurabilityProtectionUseItemMeta) {
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null && meta.isUnbreakable()) return true;
+        }
+
+        // MMOItems 6.10.1 guarda el stat UNBREAKABLE en el path NBT "Unbreakable".
+        // Se usa como respaldo por si otra transformación reconstruye el ItemMeta.
+        if (customDurabilityProtectionUseMmoItemsNbt) {
+            Boolean nbtUnbreakable = readMmoItemBoolean(item, "Unbreakable");
+            if (Boolean.TRUE.equals(nbtUnbreakable)) return true;
+        }
+
+        return false;
+    }
+
     @SuppressWarnings("unchecked")
     private void registerWeaponSwapLockExternalEvents() {
         boolean hookMmoItemsAbilities = (weaponSwapLockEnabled && weaponSwapLockBlockMmoItemAbilities) || twoHandedAbilityLockEnabled || abilityDurabilityCostEnabled;
@@ -2170,6 +2292,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         PlayerInventory inventory = player.getInventory();
         ItemStack item = inventory.getItemInMainHand();
         if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) return true;
+
+        // Evita incluso entrar al cobro manual de habilidades. El listener del evento
+        // de MMOItems también lo cubre, pero esta comprobación protege items viejos
+        // que hayan quedado accidentalmente en 0 de durabilidad.
+        if (isCustomDurabilityProtected(item)) return true;
 
         if (abilityDurabilityOnlyCustomDurability && !hasMmoCustomDurability(item)) return true;
 

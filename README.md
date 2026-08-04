@@ -1,4 +1,13 @@
-# MDVTools 1.0.17
+# MDVTools 1.0.18
+
+## MDVTools 1.0.18 - Objetos Imperecederos y Reliquias
+
+- Escucha el evento `CustomDurabilityDamage` de MMOItems por reflexión.
+- Cancela el desgaste custom cuando el item final tiene `unbreakable: true`.
+- No depende del ID, nombre, tipo ni tier del modificador.
+- También evita el coste manual de durabilidad de habilidades de MDVTools.
+- No usa tareas por tick ni escanea inventarios.
+
 
 ## MDVTools 1.0.17 - Custom drops por profesión
 
@@ -205,7 +214,7 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.17.jar`.
+El `.jar` queda en `target/MDVTools-1.0.18.jar`.
 
 
 ## MDVTools 1.0.9

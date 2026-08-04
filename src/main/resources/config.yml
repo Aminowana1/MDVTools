@@ -1,4 +1,4 @@
-# MDVTools 1.0.17
+# MDVTools 1.0.18
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -385,6 +385,28 @@ ability-durability-cost:
 
   # Evita cobrar doble si MMOItems y MythicLib disparan eventos para el mismo casteo.
   dedupe-window-ms: 75
+
+
+# ==========================================================
+# Protección de durabilidad personalizada de MMOItems
+#
+# Es completamente event-driven: solo se ejecuta cuando MMOItems
+# intenta descontar durabilidad. No revisa jugadores ni items cada tick.
+#
+# Cualquier objeto cuyo resultado final tenga unbreakable: true
+# conservará siempre completa su durabilidad custom de MMOItems.
+# No depende del ID ni del nombre del modificador.
+# ==========================================================
+custom-durability-protection:
+  enabled: true
+
+  detect:
+    # Detector principal y recomendado. MMOItems aplica esta propiedad
+    # cuando un modificador contiene: unbreakable: true
+    item-meta-unbreakable: true
+
+    # Respaldo para MMOItems 6.10.1: también revisa su NBT "Unbreakable".
+    mmoitems-unbreakable-stat: true
 
 
 two-handed-ability-lock:

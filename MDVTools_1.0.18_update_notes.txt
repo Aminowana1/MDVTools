@@ -1,0 +1,38 @@
+MDVTools 1.0.18
+=================
+
+NUEVO: PROTECCIÓN DE DURABILIDAD CUSTOM DE MMOITEMS
+
+- Se conecta por reflexión a:
+  net.Indyuce.mmoitems.api.event.item.CustomDurabilityDamage
+- Cancela el desgaste de durabilidad personalizada cuando el ItemStack final
+  tiene la propiedad unbreakable.
+- No depende del ID del modificador. Sirve para melee, rango, magia, soporte,
+  armaduras, reliquias y futuros nombres personalizados.
+- También evita el coste manual de durabilidad que MDVTools cobra al castear
+  habilidades, incluso si un item antiguo quedó accidentalmente en 0.
+- Es event-driven: no revisa jugadores ni inventarios cada tick.
+
+ACTUALIZACIÓN
+
+1. Apaga completamente el servidor.
+2. Haz copia del JAR anterior y de plugins/MDVTools/.
+3. Reemplaza el JAR anterior por MDVTools-1.0.18.jar.
+4. Conserva tu config.yml actual.
+5. Opcionalmente agrega MDVTools_1.0.18_config_addition.yml a config.yml.
+6. Inicia el servidor y comprueba en consola:
+   "Protección de durabilidad custom conectada a MMOItems."
+7. Genera un item nuevo con unbreakable: true y prueba golpes, habilidades,
+   arcos y cualquier otro uso que normalmente gaste durabilidad custom.
+
+CONFIGURACIÓN DEL MODIFICADOR
+
+No uses max-durability: false ni valores negativos. Basta con:
+
+stats:
+  unbreakable: true
+
+IMPORTANTE
+
+La línea de durabilidad custom seguirá visible y permanecerá siempre completa.
+El JAR original de MMOItems no se modifica.

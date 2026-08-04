@@ -282,32 +282,13 @@ custom-drops:
 
 
 # ==========================================================
-# CASTEO DE OFFHAND CON LA TECLA F
+# AMULETOS
 #
-# Permite que un MMOItem situado en la mano secundaria use
-# una habilidad con mode: SWAP_ITEMS sin intercambiar las manos.
-#
-# Flujo:
-# 1. MythicLib/MMOItems recibe la tecla F y ejecuta SWAP_ITEMS.
-# 2. MDVTools cancela únicamente el intercambio vanilla.
-#
-# Es event-driven y económico: solo se ejecuta al pulsar F.
-# No usa tareas repetitivas ni revisa inventarios cada tick.
+# Las habilidades de amuletos, SWAP_ITEMS y flechas extra
+# se configuran ahora en el archivo separado amulets.yml.
+# Se recarga junto con esta configuración mediante:
+# /mdvtools reload
 # ==========================================================
-offhand-swap-cast:
-  enabled: false
-
-  # Formatos admitidos:
-  # - 'TIPO:ID'   -> solo un MMOItem exacto
-  # - 'TIPO:*'    -> todos los MMOItems de ese tipo
-  # - '*:ID'      -> ese ID sin importar el tipo
-  #
-  # Se recomienda usar siempre TIPO:ID para no bloquear F
-  # en objetos que sí deban intercambiarse normalmente.
-  mmoitems: []
-  # Ejemplo:
-  # mmoitems:
-  #   - 'OFFHAND:TALISMAN_FUNEBRE'
 
 
 # Bloqueo corto al cambiar a un arma MMOItems.

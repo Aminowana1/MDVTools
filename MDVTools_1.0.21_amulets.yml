@@ -1,0 +1,140 @@
+# ==========================================================
+# MDVTOOLS - AMULETOS Y HABILIDADES DE OFFHAND
+#
+# Este archivo reúne las mecánicas de amuletos que antes
+# ocupaban espacio dentro de config.yml.
+#
+# Se recarga con: /mdvtools reload
+# ==========================================================
+
+
+# ==========================================================
+# CASTEO DE OFFHAND CON LA TECLA F
+#
+# MythicLib/MMOItems recibe primero SWAP_ITEMS y puede ejecutar
+# la habilidad. MDVTools cancela después el movimiento vanilla
+# de objetos entre la mano principal y la secundaria.
+#
+# Es event-driven: solo se ejecuta cuando el jugador pulsa F.
+# ==========================================================
+offhand-swap-cast:
+  enabled: true
+
+  # true = la tecla F nunca intercambia objetos, tenga o no
+  # un amuleto configurado. Las habilidades SWAP_ITEMS de
+  # MMOItems siguen pudiendo activarse.
+  #
+  # false = solo bloquea el intercambio cuando el objeto de
+  # offhand coincide con uno de los selectores de mmoitems.
+  block-vanilla-swap-always: true
+
+  # Esta lista se usa únicamente cuando
+  # block-vanilla-swap-always: false.
+  # También puedes mantener aquí tus amuletos SWAP_ITEMS como
+  # catálogo organizado aunque el bloqueo global esté activo.
+  #
+  # Formatos admitidos:
+  # - 'TIPO:ID' -> un MMOItem exacto
+  # - 'TIPO:*'  -> todos los MMOItems de ese tipo
+  # - '*:ID'    -> ese ID sin importar el tipo
+  # - '*:*'     -> cualquier MMOItem
+  mmoitems: []
+  # Ejemplo:
+  # mmoitems:
+  #   - 'AMULETO:TALISMAN_FUNEBRE'
+  #   - 'AMULETO:AMULETO_DE_LA_RAFAGA'
+
+
+# ==========================================================
+# FLECHAS EXTRA PARA ARCOS Y BALLESTAS
+#
+# Puede obtener el efecto desde un arco/ballesta MMOItem,
+# desde un amuleto en offhand o desde cualquiera de ambos.
+#
+# Las copias conservan tipo de flecha, daño base, velocidad,
+# crítico, perforación, efectos y arma de origen.
+# ==========================================================
+ranged-extra-arrows:
+  enabled: false
+
+  # total-arrows incluye la flecha original.
+  # Con 8 adicionales, el máximo permitido es 9 en total.
+  max-extra-arrows-per-shot: 8
+
+  # Evita que Multishot active el patrón varias veces durante
+  # el mismo disparo de ballesta.
+  duplicate-shot-window-ms: 35
+
+  # Despawn de las flechas copiadas. 100 ticks = 5 segundos.
+  # Usa 0 para conservar el despawn vanilla.
+  default-despawn-after-ticks: 100
+
+  # Solo se activa el primer patrón coincidente, respetando
+  # el orden de este archivo.
+  patterns:
+
+    # 1 flecha original + 2 copias consecutivas.
+    amuleto_rafaga:
+      enabled: false
+      source: OFFHAND
+      mmoitems:
+        - 'AMULETO:AMULETO_DE_LA_RAFAGA'
+      weapons:
+        - BOW
+        - CROSSBOW
+      mode: BURST
+      total-arrows: 3
+      chance-percent: 100.0
+      cooldown-ticks: 0
+      minimum-force: 0.0
+      damage-multiplier: 1.0
+      velocity-multiplier: 1.0
+      extra-arrows-pickup: false
+      despawn-after-ticks: 100
+      burst:
+        # Para golpear varias veces al mismo mob, conviene que
+        # sea igual o mayor a sus NoDamageTicks.
+        delay-ticks: 8
+
+    # 1 central y 2 a cada lado.
+    amuleto_abanico_horizontal:
+      enabled: false
+      source: OFFHAND
+      mmoitems:
+        - 'AMULETO:AMULETO_DEL_ABANICO'
+      weapons:
+        - BOW
+        - CROSSBOW
+      mode: HORIZONTAL
+      total-arrows: 5
+      chance-percent: 100.0
+      cooldown-ticks: 0
+      minimum-force: 0.75
+      damage-multiplier: 1.0
+      velocity-multiplier: 1.0
+      extra-arrows-pickup: false
+      despawn-after-ticks: 100
+      horizontal:
+        angle-step-degrees: 6.0
+
+    # Flechas distribuidas aleatoriamente dentro de un cono.
+    amuleto_volley:
+      enabled: false
+      source: OFFHAND
+      mmoitems:
+        - 'AMULETO:AMULETO_DEL_VOLLEY'
+      weapons:
+        - BOW
+        - CROSSBOW
+      mode: VOLLEY
+      total-arrows: 5
+      chance-percent: 100.0
+      cooldown-ticks: 20
+      minimum-force: 0.0
+      damage-multiplier: 1.0
+      velocity-multiplier: 1.0
+      extra-arrows-pickup: false
+      despawn-after-ticks: 100
+      volley:
+        horizontal-spread-degrees: 10.0
+        vertical-spread-degrees: 5.0

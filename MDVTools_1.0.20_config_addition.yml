@@ -1,0 +1,64 @@
+# Añade este bloque completo a config.yml y cambia los IDs de ejemplo
+# por los TYPE:ID reales de tus MMOItems.
+
+ranged-extra-arrows:
+  enabled: true
+  max-extra-arrows-per-shot: 8
+  duplicate-shot-window-ms: 35
+  default-despawn-after-ticks: 100
+
+  patterns:
+    amuleto_rafaga:
+      enabled: true
+      source: OFFHAND
+      mmoitems:
+        - 'AMULETO:AMULETO_DE_LA_RAFAGA'
+      weapons: [BOW, CROSSBOW]
+      mode: BURST
+      total-arrows: 3
+      chance-percent: 100.0
+      cooldown-ticks: 0
+      minimum-force: 0.0
+      damage-multiplier: 1.0
+      velocity-multiplier: 1.0
+      extra-arrows-pickup: false
+      despawn-after-ticks: 100
+      burst:
+        delay-ticks: 8
+
+    arco_abanico_horizontal:
+      enabled: true
+      source: WEAPON
+      mmoitems:
+        - 'BOW:ARCO_DEL_ABANICO'
+      weapons: [BOW]
+      mode: HORIZONTAL
+      total-arrows: 5
+      chance-percent: 100.0
+      cooldown-ticks: 0
+      minimum-force: 0.75
+      damage-multiplier: 1.0
+      velocity-multiplier: 1.0
+      extra-arrows-pickup: false
+      despawn-after-ticks: 100
+      horizontal:
+        angle-step-degrees: 6.0
+
+    ballesta_volley:
+      enabled: true
+      source: WEAPON
+      mmoitems:
+        - 'CROSSBOW:BALLESTA_DEL_VOLLEY'
+      weapons: [CROSSBOW]
+      mode: VOLLEY
+      total-arrows: 5
+      chance-percent: 100.0
+      cooldown-ticks: 20
+      minimum-force: 0.0
+      damage-multiplier: 1.0
+      velocity-multiplier: 1.0
+      extra-arrows-pickup: false
+      despawn-after-ticks: 100
+      volley:
+        horizontal-spread-degrees: 10.0
+        vertical-spread-degrees: 5.0

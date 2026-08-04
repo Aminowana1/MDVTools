@@ -23,6 +23,8 @@ import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
+import org.bukkit.entity.AbstractArrow;
+import org.bukkit.entity.EntitySnapshot;
 import org.bukkit.entity.Entity;
 import org.bukkit.event.Event;
 import org.bukkit.event.Cancellable;
@@ -105,6 +107,10 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     private File customDropsFile;
     private FileConfiguration customDropsConfig;
+
+    // Configuración separada para todos los amuletos y efectos de offhand.
+    private File amuletsFile;
+    private FileConfiguration amuletsConfig;
     private boolean customDropsEnabled;
     private String customDropsFallbackCommand;
     private final List<CustomDropDefinition> customDrops = new ArrayList<>();
@@ -214,10 +220,21 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, WeaponSwapItemIdentity> weaponSwapLastWeaponBeforeNonWeapon = new HashMap<>();
     private final Set<String> weaponSwapLockHookedEvents = new HashSet<>();
 
-    // Permite usar SWAP_ITEMS de MMOItems con objetos concretos en offhand
-    // sin realizar el intercambio vanilla de manos.
+    // Permite usar SWAP_ITEMS de MMOItems desde offhand y puede bloquear
+    // globalmente el intercambio vanilla de manos.
     private boolean offhandSwapCastEnabled;
+    private boolean offhandSwapCastBlockVanillaAlways;
     private Set<String> offhandSwapCastMmoItems = new HashSet<>();
+
+    // Patrones event-driven de flechas adicionales para arcos y ballestas.
+    // Se activan únicamente al disparar y pueden provenir del arma o del offhand.
+    private boolean rangedExtraArrowsEnabled;
+    private int rangedExtraArrowsMaxExtraPerShot;
+    private long rangedExtraArrowsDuplicateWindowMs;
+    private int rangedExtraArrowsDefaultDespawnTicks;
+    private final List<RangedExtraArrowDefinition> rangedExtraArrowDefinitions = new ArrayList<>();
+    private final Map<UUID, Long> rangedExtraArrowLastShot = new HashMap<>();
+    private final Map<UUID, Map<String, Long>> rangedExtraArrowCooldowns = new HashMap<>();
 
     private boolean twoHandedAbilityLockEnabled;
     private boolean twoHandedAbilityLockOnlyWeaponTypes;
@@ -323,6 +340,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         weaponSwapLastWeaponBeforeNonWeapon.clear();
         twoHandedAbilityLockLastBlockedMessage.clear();
         abilityDurabilityLastCharge.clear();
+        rangedExtraArrowLastShot.clear();
+        rangedExtraArrowCooldowns.clear();
         identificationSuppressedTargets.clear();
         professionBonusCache.clear();
         tpaIncoming.clear();
@@ -361,6 +380,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     private void loadSettings() {
         reloadConfig();
+        loadAmuletsConfiguration();
 
         debug = getConfig().getBoolean("debug", false);
 
@@ -442,6 +462,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         loadCrossbowAutoReloadSettings();
         loadWeaponSwapLockSettings();
         loadOffhandSwapCastSettings();
+        loadRangedExtraArrowSettings();
         loadTwoHandedAbilityLockSettings();
         loadAbilityDurabilityCostSettings();
         loadCustomDurabilityProtectionSettings();
@@ -671,17 +692,20 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
 
     private void loadOffhandSwapCastSettings() {
-        offhandSwapCastEnabled = getConfig().getBoolean("offhand-swap-cast.enabled", false);
+        FileConfiguration cfg = amuletsConfig == null ? getConfig() : amuletsConfig;
+        offhandSwapCastEnabled = cfg.getBoolean("offhand-swap-cast.enabled", true);
+        offhandSwapCastBlockVanillaAlways = cfg.getBoolean(
+                "offhand-swap-cast.block-vanilla-swap-always", true);
         offhandSwapCastMmoItems = new HashSet<>();
 
-        for (String raw : getConfig().getStringList("offhand-swap-cast.mmoitems")) {
+        for (String raw : cfg.getStringList("offhand-swap-cast.mmoitems")) {
             if (raw == null) continue;
             String entry = raw.trim().toUpperCase(Locale.ROOT).replace(" ", "");
             if (entry.isBlank()) continue;
 
             int separator = entry.indexOf(':');
             if (separator <= 0 || separator >= entry.length() - 1) {
-                getLogger().warning("Entrada inválida en offhand-swap-cast.mmoitems: " + raw
+                getLogger().warning("Entrada inválida en amulets.yml -> offhand-swap-cast.mmoitems: " + raw
                         + " (usa TIPO:ID, TIPO:* o *:ID)");
                 continue;
             }
@@ -689,8 +713,126 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             offhandSwapCastMmoItems.add(entry);
         }
 
-        debug("offhand-swap-cast cargado: enabled=" + offhandSwapCastEnabled
+        debug("amulets.yml/offhand-swap-cast cargado: enabled=" + offhandSwapCastEnabled
+                + ", always-block=" + offhandSwapCastBlockVanillaAlways
                 + ", items=" + offhandSwapCastMmoItems.size());
+    }
+
+    private void loadRangedExtraArrowSettings() {
+        FileConfiguration cfg = amuletsConfig == null ? getConfig() : amuletsConfig;
+        rangedExtraArrowsEnabled = cfg.getBoolean("ranged-extra-arrows.enabled", false);
+        rangedExtraArrowsMaxExtraPerShot = Math.max(0, Math.min(32,
+                cfg.getInt("ranged-extra-arrows.max-extra-arrows-per-shot", 8)));
+        rangedExtraArrowsDuplicateWindowMs = Math.max(0L,
+                cfg.getLong("ranged-extra-arrows.duplicate-shot-window-ms", 35L));
+        rangedExtraArrowsDefaultDespawnTicks = Math.max(0,
+                cfg.getInt("ranged-extra-arrows.default-despawn-after-ticks", 100));
+
+        rangedExtraArrowDefinitions.clear();
+        ConfigurationSection patterns = cfg.getConfigurationSection("ranged-extra-arrows.patterns");
+        if (patterns != null) {
+            for (String key : patterns.getKeys(false)) {
+                ConfigurationSection section = patterns.getConfigurationSection(key);
+                if (section == null || !section.getBoolean("enabled", true)) continue;
+
+                RangedExtraArrowDefinition definition = new RangedExtraArrowDefinition();
+                definition.key = key;
+                definition.source = parseRangedExtraArrowSource(section.getString("source", "OFFHAND"));
+                definition.mode = parseRangedExtraArrowMode(section.getString("mode", "BURST"));
+                definition.totalArrows = Math.max(2, Math.min(rangedExtraArrowsMaxExtraPerShot + 1,
+                        section.getInt("total-arrows", 2)));
+                definition.chancePercent = Math.max(0.0, Math.min(100.0,
+                        section.getDouble("chance-percent", 100.0)));
+                definition.cooldownMs = Math.max(0L, section.getLong("cooldown-ticks", 0L) * 50L);
+                definition.minimumForce = Math.max(0.0, Math.min(1.0,
+                        section.getDouble("minimum-force", 0.0)));
+                definition.damageMultiplier = Math.max(0.0,
+                        section.getDouble("damage-multiplier", 1.0));
+                definition.velocityMultiplier = Math.max(0.01,
+                        section.getDouble("velocity-multiplier", 1.0));
+                definition.extraArrowsPickup = section.getBoolean("extra-arrows-pickup", false);
+                definition.despawnAfterTicks = Math.max(0,
+                        section.getInt("despawn-after-ticks", rangedExtraArrowsDefaultDespawnTicks));
+                definition.burstDelayTicks = Math.max(0L,
+                        section.getLong("burst.delay-ticks", 3L));
+                definition.horizontalAngleStepDegrees = Math.max(0.0,
+                        section.getDouble("horizontal.angle-step-degrees", 6.0));
+                definition.volleyHorizontalSpreadDegrees = Math.max(0.0,
+                        section.getDouble("volley.horizontal-spread-degrees", 10.0));
+                definition.volleyVerticalSpreadDegrees = Math.max(0.0,
+                        section.getDouble("volley.vertical-spread-degrees", 5.0));
+
+                for (String raw : section.getStringList("mmoitems")) {
+                    String selector = normalizeMmoItemSelector(raw);
+                    if (selector != null) definition.mmoItems.add(selector);
+                }
+                if (definition.mmoItems.isEmpty()) {
+                    getLogger().warning("Patrón ranged-extra-arrows sin MMOItems válidos: " + key);
+                    continue;
+                }
+
+                for (String raw : section.getStringList("weapons")) {
+                    if (raw == null || raw.isBlank()) continue;
+                    Material material = Material.matchMaterial(raw);
+                    if (material == Material.BOW || material == Material.CROSSBOW) {
+                        definition.weapons.add(material);
+                    } else {
+                        getLogger().warning("Arma inválida en ranged-extra-arrows.patterns." + key
+                                + ".weapons: " + raw + " (usa BOW o CROSSBOW)");
+                    }
+                }
+                if (definition.weapons.isEmpty()) {
+                    definition.weapons.add(Material.BOW);
+                    definition.weapons.add(Material.CROSSBOW);
+                }
+
+                rangedExtraArrowDefinitions.add(definition);
+            }
+        }
+
+        if (!rangedExtraArrowsEnabled || rangedExtraArrowDefinitions.isEmpty()) {
+            rangedExtraArrowLastShot.clear();
+            rangedExtraArrowCooldowns.clear();
+        }
+
+        debug("ranged-extra-arrows cargado: enabled=" + rangedExtraArrowsEnabled
+                + ", patterns=" + rangedExtraArrowDefinitions.size()
+                + ", max-extra=" + rangedExtraArrowsMaxExtraPerShot);
+    }
+
+    private RangedExtraArrowSource parseRangedExtraArrowSource(String raw) {
+        if (raw == null) return RangedExtraArrowSource.OFFHAND;
+        try {
+            return RangedExtraArrowSource.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            getLogger().warning("source inválido en ranged-extra-arrows: " + raw
+                    + " (usa WEAPON, OFFHAND o EITHER)");
+            return RangedExtraArrowSource.OFFHAND;
+        }
+    }
+
+    private RangedExtraArrowMode parseRangedExtraArrowMode(String raw) {
+        if (raw == null) return RangedExtraArrowMode.BURST;
+        try {
+            return RangedExtraArrowMode.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            getLogger().warning("mode inválido en ranged-extra-arrows: " + raw
+                    + " (usa BURST, HORIZONTAL o VOLLEY)");
+            return RangedExtraArrowMode.BURST;
+        }
+    }
+
+    private String normalizeMmoItemSelector(String raw) {
+        if (raw == null) return null;
+        String selector = raw.trim().toUpperCase(Locale.ROOT).replace(" ", "");
+        if (selector.isBlank()) return null;
+        int separator = selector.indexOf(':');
+        if (separator <= 0 || separator >= selector.length() - 1) {
+            getLogger().warning("Selector MMOItems inválido: " + raw
+                    + " (usa TIPO:ID, TIPO:* o *:ID)");
+            return null;
+        }
+        return selector;
     }
 
     private void loadTwoHandedAbilityLockSettings() {
@@ -794,6 +936,79 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         customDropsRelativeFarmingBonus = getConfig().getBoolean("custom-drops.relative-bonuses.farming", true);
         customDropsRelativeMiningBonus = getConfig().getBoolean("custom-drops.relative-bonuses.mining", true);
         customDropsRelativeWoodcuttingBonus = getConfig().getBoolean("custom-drops.relative-bonuses.woodcutting", true);
+    }
+
+    private void ensureAmuletsFile() {
+        amuletsFile = new File(getDataFolder(), "amulets.yml");
+        if (!amuletsFile.exists()) {
+            try {
+                saveResource("amulets.yml", false);
+            } catch (IllegalArgumentException ignored) {
+                // Si el recurso no existe por alguna razón, se crea vacío abajo.
+            }
+        }
+    }
+
+    private void loadAmuletsConfiguration() {
+        boolean firstCreation = !new File(getDataFolder(), "amulets.yml").exists();
+
+        ensureAmuletsFile();
+        if (!amuletsFile.exists()) {
+            try {
+                getDataFolder().mkdirs();
+                amuletsFile.createNewFile();
+            } catch (Exception exception) {
+                getLogger().warning("No pude crear amulets.yml: " + exception.getMessage());
+            }
+        }
+
+        amuletsConfig = YamlConfiguration.loadConfiguration(amuletsFile);
+
+        // Migración automática de 1.0.20: si todavía estaban en config.yml,
+        // los mueve al archivo nuevo solo durante su primera creación.
+        if (firstCreation) {
+            boolean migrated = false;
+            migrated |= copyLegacySectionToAmulets("offhand-swap-cast");
+            migrated |= copyLegacySectionToAmulets("ranged-extra-arrows");
+
+            // La nueva versión bloquea el swap vanilla globalmente por defecto.
+            if (!amuletsConfig.contains("offhand-swap-cast.block-vanilla-swap-always")) {
+                amuletsConfig.set("offhand-swap-cast.block-vanilla-swap-always", true);
+                migrated = true;
+            }
+
+            if (migrated) {
+                try {
+                    amuletsConfig.save(amuletsFile);
+                    getLogger().info("Configuración de amuletos migrada automáticamente a amulets.yml.");
+                } catch (Exception exception) {
+                    getLogger().warning("No pude guardar la migración a amulets.yml: " + exception.getMessage());
+                }
+            }
+        }
+    }
+
+    private boolean copyLegacySectionToAmulets(String root) {
+        ConfigurationSection source = getConfig().getConfigurationSection(root);
+        if (source == null) return false;
+
+        ConfigurationSection target = amuletsConfig.getConfigurationSection(root);
+        if (target == null) target = amuletsConfig.createSection(root);
+        copyConfigurationSectionValues(source, target);
+        return true;
+    }
+
+    private void copyConfigurationSectionValues(ConfigurationSection source, ConfigurationSection target) {
+        for (String key : source.getKeys(false)) {
+            ConfigurationSection child = source.getConfigurationSection(key);
+            if (child != null) {
+                ConfigurationSection targetChild = target.getConfigurationSection(key);
+                if (targetChild == null) targetChild = target.createSection(key);
+                copyConfigurationSectionValues(child, targetChild);
+            } else {
+                target.set(key, source.get(key));
+            }
+        }
     }
 
     private void ensureCustomDropsFile() {
@@ -1132,27 +1347,31 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
     /**
-     * Deja que MythicLib/MMOItems procese primero el trigger SWAP_ITEMS y,
-     * únicamente para los MMOItems configurados en la mano secundaria,
-     * cancela después el intercambio vanilla de manos.
+     * Deja que MythicLib/MMOItems procese primero el trigger SWAP_ITEMS y
+     * cancela después el intercambio vanilla de manos. Con
+     * block-vanilla-swap-always: true, la tecla F nunca mueve objetos,
+     * aunque el jugador no tenga un amuleto configurado.
      *
-     * Es completamente event-driven: no usa tareas repetitivas ni recorre
-     * inventarios. Solo inspecciona el item de offhand al pulsar F.
+     * Es completamente event-driven: solo se ejecuta al pulsar F.
      */
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onOffhandSwapCast(PlayerSwapHandItemsEvent event) {
-        if (!offhandSwapCastEnabled || offhandSwapCastMmoItems.isEmpty()) return;
+        if (!offhandSwapCastEnabled) return;
 
         Player player = event.getPlayer();
         if (player == null) return;
 
-        // Antes de que el evento termine, el inventario conserva el item real
-        // que el jugador tiene actualmente en la mano secundaria.
-        ItemStack offhand = player.getInventory().getItemInOffHand();
-        if (!isConfiguredOffhandSwapCastItem(offhand)) return;
+        if (!offhandSwapCastBlockVanillaAlways) {
+            if (offhandSwapCastMmoItems.isEmpty()) return;
 
-        // MythicLib ya recibió SWAP_ITEMS en una prioridad anterior.
-        // Cancelamos únicamente el movimiento vanilla de los objetos.
+            // En modo selectivo solo bloquea F cuando el offhand coincide
+            // con uno de los MMOItems declarados en amulets.yml.
+            ItemStack offhand = player.getInventory().getItemInOffHand();
+            if (!isConfiguredOffhandSwapCastItem(offhand)) return;
+        }
+
+        // MythicLib/MMOItems ya pudo procesar SWAP_ITEMS en prioridades
+        // anteriores. Aquí se cancela únicamente el movimiento vanilla.
         event.setCancelled(true);
     }
 
@@ -1226,10 +1445,217 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         twoHandedAbilityLockLastBlockedMessage.remove(id);
         weaponSwapLastWeaponBeforeNonWeapon.remove(id);
         professionBonusCache.remove(id);
+        rangedExtraArrowLastShot.remove(id);
+        rangedExtraArrowCooldowns.remove(id);
         removeTpaRequestsFor(id, true);
         cancelTpaWarmupsFor(id, true);
         tpaCooldownUntil.remove(id);
         tpaInvulnerableUntil.remove(id);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onRangedExtraArrowShoot(EntityShootBowEvent event) {
+        if (!rangedExtraArrowsEnabled || rangedExtraArrowDefinitions.isEmpty()) return;
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (!(event.getProjectile() instanceof AbstractArrow originalArrow)) return;
+
+        ItemStack weapon = event.getBow();
+        if (weapon == null || (weapon.getType() != Material.BOW && weapon.getType() != Material.CROSSBOW)) return;
+
+        RangedExtraArrowDefinition definition = findRangedExtraArrowDefinition(player, weapon);
+        if (definition == null) return;
+        if (event.getForce() + 1.0E-6 < definition.minimumForce) return;
+
+        long now = System.currentTimeMillis();
+        if (rangedExtraArrowsDuplicateWindowMs > 0L) {
+            long last = rangedExtraArrowLastShot.getOrDefault(player.getUniqueId(), 0L);
+            if (now - last < rangedExtraArrowsDuplicateWindowMs) return;
+            rangedExtraArrowLastShot.put(player.getUniqueId(), now);
+        }
+
+        Map<String, Long> playerCooldowns = null;
+        if (definition.cooldownMs > 0L) {
+            playerCooldowns = rangedExtraArrowCooldowns.get(player.getUniqueId());
+            if (playerCooldowns != null) {
+                long cooldownUntil = playerCooldowns.getOrDefault(definition.key, 0L);
+                if (cooldownUntil > now) return;
+            }
+        }
+
+        if (definition.chancePercent < 100.0
+                && ThreadLocalRandom.current().nextDouble(100.0) >= definition.chancePercent) return;
+
+        EntitySnapshot snapshot;
+        try {
+            snapshot = originalArrow.createSnapshot();
+        } catch (Throwable throwable) {
+            if (debug) getLogger().warning("No pude crear snapshot de flecha para " + definition.key
+                    + ": " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+            return;
+        }
+        if (snapshot == null) return;
+
+        Vector baseVelocity = originalArrow.getVelocity().clone();
+        if (baseVelocity.lengthSquared() <= 1.0E-8) return;
+
+        if (definition.cooldownMs > 0L) {
+            if (playerCooldowns == null) {
+                playerCooldowns = rangedExtraArrowCooldowns.computeIfAbsent(
+                        player.getUniqueId(), ignored -> new HashMap<>());
+            }
+            playerCooldowns.put(definition.key, now + definition.cooldownMs);
+        }
+
+        triggerRangedExtraArrows(player, originalArrow.getLocation().clone(), snapshot, baseVelocity, definition);
+    }
+
+    private RangedExtraArrowDefinition findRangedExtraArrowDefinition(Player player, ItemStack weapon) {
+        ItemStack offhand = player.getInventory().getItemInOffHand();
+        for (RangedExtraArrowDefinition definition : rangedExtraArrowDefinitions) {
+            if (!definition.weapons.contains(weapon.getType())) continue;
+
+            boolean matches = switch (definition.source) {
+                case WEAPON -> matchesConfiguredMmoItem(weapon, definition.mmoItems);
+                case OFFHAND -> matchesConfiguredMmoItem(offhand, definition.mmoItems);
+                case EITHER -> matchesConfiguredMmoItem(weapon, definition.mmoItems)
+                        || matchesConfiguredMmoItem(offhand, definition.mmoItems);
+            };
+            if (matches) return definition;
+        }
+        return null;
+    }
+
+    private void triggerRangedExtraArrows(Player player, Location originalLocation, EntitySnapshot snapshot,
+                                          Vector baseVelocity, RangedExtraArrowDefinition definition) {
+        int extraCount = Math.max(0, Math.min(rangedExtraArrowsMaxExtraPerShot,
+                definition.totalArrows - 1));
+        if (extraCount <= 0) return;
+
+        List<Entity> spawned = new ArrayList<>(extraCount);
+        switch (definition.mode) {
+            case BURST -> spawnBurstExtraArrows(player, originalLocation, snapshot, baseVelocity,
+                    definition, extraCount, spawned);
+            case HORIZONTAL -> {
+                for (int index = 1; index <= extraCount; index++) {
+                    int step = (index + 1) / 2;
+                    double sign = (index % 2 == 1) ? -1.0 : 1.0;
+                    double angle = sign * step * definition.horizontalAngleStepDegrees;
+                    Vector velocity = rotateHorizontal(baseVelocity, angle)
+                            .multiply(definition.velocityMultiplier);
+                    AbstractArrow arrow = spawnExtraArrow(snapshot, originalLocation, player, velocity, definition);
+                    if (arrow != null) spawned.add(arrow);
+                }
+                scheduleExtraArrowCleanup(spawned, definition.despawnAfterTicks);
+            }
+            case VOLLEY -> {
+                ThreadLocalRandom random = ThreadLocalRandom.current();
+                for (int index = 0; index < extraCount; index++) {
+                    double yaw = random.nextDouble(-definition.volleyHorizontalSpreadDegrees,
+                            definition.volleyHorizontalSpreadDegrees + Math.ulp(definition.volleyHorizontalSpreadDegrees));
+                    double pitch = random.nextDouble(-definition.volleyVerticalSpreadDegrees,
+                            definition.volleyVerticalSpreadDegrees + Math.ulp(definition.volleyVerticalSpreadDegrees));
+                    Vector velocity = rotateYawPitch(baseVelocity, yaw, pitch)
+                            .multiply(definition.velocityMultiplier);
+                    AbstractArrow arrow = spawnExtraArrow(snapshot, originalLocation, player, velocity, definition);
+                    if (arrow != null) spawned.add(arrow);
+                }
+                scheduleExtraArrowCleanup(spawned, definition.despawnAfterTicks);
+            }
+        }
+
+        debug("Patrón de flechas activado: " + definition.key + " jugador=" + player.getName()
+                + " mode=" + definition.mode + " extra=" + extraCount);
+    }
+
+    private void spawnBurstExtraArrows(Player player, Location originalLocation, EntitySnapshot snapshot,
+                                       Vector baseVelocity, RangedExtraArrowDefinition definition,
+                                       int extraCount, List<Entity> spawned) {
+        World originalWorld = originalLocation.getWorld();
+        if (originalWorld == null) return;
+
+        long delay = definition.burstDelayTicks;
+        if (delay <= 0L) {
+            for (int index = 0; index < extraCount; index++) {
+                AbstractArrow arrow = spawnExtraArrow(snapshot, originalLocation, player,
+                        baseVelocity.clone().multiply(definition.velocityMultiplier), definition);
+                if (arrow != null) spawned.add(arrow);
+            }
+            scheduleExtraArrowCleanup(spawned, definition.despawnAfterTicks);
+            return;
+        }
+
+        final int[] remaining = {extraCount};
+        final BukkitTask[] task = new BukkitTask[1];
+        task[0] = Bukkit.getScheduler().runTaskTimer(this, () -> {
+            if (remaining[0] <= 0 || !player.isOnline() || player.isDead()
+                    || player.getWorld() != originalWorld) {
+                if (task[0] != null) task[0].cancel();
+                return;
+            }
+
+            AbstractArrow arrow = spawnExtraArrow(snapshot, originalLocation, player,
+                    baseVelocity.clone().multiply(definition.velocityMultiplier), definition);
+            if (arrow != null) spawned.add(arrow);
+
+            remaining[0]--;
+            if (remaining[0] <= 0 && task[0] != null) task[0].cancel();
+        }, delay, delay);
+
+        long cleanupDelay = definition.despawnAfterTicks <= 0 ? 0L
+                : definition.despawnAfterTicks + (delay * extraCount);
+        scheduleExtraArrowCleanup(spawned, cleanupDelay);
+    }
+
+
+    private AbstractArrow spawnExtraArrow(EntitySnapshot snapshot, Location location, Player shooter,
+                                          Vector velocity, RangedExtraArrowDefinition definition) {
+        if (snapshot == null || location == null || location.getWorld() == null) return null;
+        try {
+            Entity copied = snapshot.createEntity(location);
+            if (!(copied instanceof AbstractArrow arrow)) {
+                copied.remove();
+                return null;
+            }
+
+            arrow.setShooter(shooter, false);
+            arrow.setVelocity(velocity);
+            arrow.setDamage(Math.max(0.0, arrow.getDamage() * definition.damageMultiplier));
+            if (!definition.extraArrowsPickup) {
+                arrow.setPickupStatus(AbstractArrow.PickupStatus.DISALLOWED);
+            }
+            arrow.addScoreboardTag("mdvtools_extra_arrow");
+            return arrow;
+        } catch (Throwable throwable) {
+            if (debug) getLogger().warning("No pude duplicar flecha de " + definition.key + ": "
+                    + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
+            return null;
+        }
+    }
+
+    private void scheduleExtraArrowCleanup(List<Entity> arrows, long delayTicks) {
+        if (delayTicks <= 0L || arrows == null) return;
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            for (Entity arrow : arrows) {
+                if (arrow != null && arrow.isValid()) arrow.remove();
+            }
+            arrows.clear();
+        }, delayTicks);
+    }
+
+    private Vector rotateHorizontal(Vector vector, double degrees) {
+        return vector.clone().rotateAroundY(Math.toRadians(degrees));
+    }
+
+    private Vector rotateYawPitch(Vector vector, double yawDegrees, double pitchDegrees) {
+        double speed = vector.length();
+        if (speed <= 1.0E-8) return vector.clone();
+
+        Vector direction = vector.clone().normalize().rotateAroundY(Math.toRadians(yawDegrees));
+        Vector right = direction.clone().crossProduct(new Vector(0.0, 1.0, 0.0));
+        if (right.lengthSquared() <= 1.0E-8) right = new Vector(1.0, 0.0, 0.0);
+        right.normalize();
+        direction.rotateAroundAxis(right, Math.toRadians(pitchDegrees));
+        return direction.normalize().multiply(speed);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -2658,6 +3084,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
     private boolean isConfiguredOffhandSwapCastItem(ItemStack item) {
+        return matchesConfiguredMmoItem(item, offhandSwapCastMmoItems);
+    }
+
+    private boolean matchesConfiguredMmoItem(ItemStack item, Set<String> selectors) {
+        if (selectors == null || selectors.isEmpty()) return false;
         if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) return false;
 
         String type = readMmoItemTypeId(item);
@@ -2667,10 +3098,10 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         type = type.toUpperCase(Locale.ROOT);
         id = id.toUpperCase(Locale.ROOT);
 
-        return offhandSwapCastMmoItems.contains(type + ":" + id)
-                || offhandSwapCastMmoItems.contains(type + ":*")
-                || offhandSwapCastMmoItems.contains("*:" + id)
-                || offhandSwapCastMmoItems.contains("*:*");
+        return selectors.contains(type + ":" + id)
+                || selectors.contains(type + ":*")
+                || selectors.contains("*:" + id)
+                || selectors.contains("*:*");
     }
 
     private boolean isWeaponSwapLockWeapon(ItemStack item) {
@@ -3968,6 +4399,38 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             this.itemIdentity = itemIdentity == null ? "" : itemIdentity;
             this.createdAtMs = createdAtMs;
         }
+    }
+
+    private enum RangedExtraArrowSource {
+        WEAPON,
+        OFFHAND,
+        EITHER
+    }
+
+    private enum RangedExtraArrowMode {
+        BURST,
+        HORIZONTAL,
+        VOLLEY
+    }
+
+    private static final class RangedExtraArrowDefinition {
+        String key;
+        RangedExtraArrowSource source = RangedExtraArrowSource.OFFHAND;
+        RangedExtraArrowMode mode = RangedExtraArrowMode.BURST;
+        final Set<String> mmoItems = new HashSet<>();
+        final Set<Material> weapons = EnumSet.noneOf(Material.class);
+        int totalArrows = 2;
+        double chancePercent = 100.0;
+        long cooldownMs;
+        double minimumForce;
+        double damageMultiplier = 1.0;
+        double velocityMultiplier = 1.0;
+        boolean extraArrowsPickup;
+        int despawnAfterTicks = 100;
+        long burstDelayTicks = 3L;
+        double horizontalAngleStepDegrees = 6.0;
+        double volleyHorizontalSpreadDegrees = 10.0;
+        double volleyVerticalSpreadDegrees = 5.0;
     }
 
     private enum CustomDropCategory {

@@ -1,17 +1,36 @@
-# MDVTools 1.0.19
+# MDVTools 1.0.21
 
-## MDVTools 1.0.19 - Casteo de offhand con F
+## MDVTools 1.0.21 - Amuletos en archivo separado y bloqueo global de F
 
-Permite que objetos MMOItems configurados en la mano secundaria ejecuten una habilidad con `mode: SWAP_ITEMS` sin realizar el intercambio vanilla de manos. MythicLib/MMOItems procesa primero la habilidad y MDVTools cancela después únicamente el swap. El sistema es event-driven y se limita a una comprobación del offhand al pulsar F.
+Toda la configuración de amuletos fue movida a `plugins/MDVTools/amulets.yml`:
 
-Configuración:
+- `offhand-swap-cast`: habilidades MMOItems con `mode: SWAP_ITEMS`.
+- `ranged-extra-arrows`: ráfaga, abanico horizontal y volley para arcos/ballestas.
+
+Con esta opción, la tecla F nunca intercambia físicamente los objetos, aunque no
+haya un amuleto configurado. MythicLib/MMOItems puede procesar primero la habilidad
+`SWAP_ITEMS` y MDVTools cancela después únicamente el movimiento vanilla:
 
 ```yaml
 offhand-swap-cast:
   enabled: true
-  mmoitems:
-    - OFFHAND:TALISMAN_FUNEBRE
+  block-vanilla-swap-always: true
+  mmoitems: []
 ```
+
+La primera vez que 1.0.21 crea `amulets.yml`, copia automáticamente los bloques
+antiguos `offhand-swap-cast` y `ranged-extra-arrows` que encuentre en `config.yml`.
+Luego esos dos bloques antiguos pueden borrarse de `config.yml`.
+
+`/mdvtools reload` recarga tanto `config.yml` como `amulets.yml`. Todo sigue siendo
+event-driven: el bloqueo solo se evalúa al pulsar F y las flechas extra solo al disparar.
+
+
+## MDVTools 1.0.20 - Flechas extra para arcos y ballestas
+
+Permite que un arco/ballesta MMOItem o un MMOItem de offhand active una ráfaga,
+un abanico horizontal o un volley. Las flechas extra copian la flecha original y
+conservan sus propiedades relevantes. Desde 1.0.21 se configura en `amulets.yml`.
 
 
 ## MDVTools 1.0.18 - Objetos Imperecederos y Reliquias
@@ -228,7 +247,7 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.19.jar`.
+El `.jar` queda en `target/MDVTools-1.0.21.jar`.
 
 
 ## MDVTools 1.0.9
@@ -249,3 +268,12 @@ Bloquea habilidades de MMOItems/MythicLib cuando el arma principal es de dos man
 ## ability-durability-cost
 
 Cobra 1 punto de durabilidad custom de MMOItems cuando un jugador castea una habilidad de MMOItems/MythicLib desde el item en mano principal. No agrega mensajes propios y solo afecta items con `max-durability` custom de MMOItems.
+
+## Flechas extra de MMOItems (1.0.20)
+
+`ranged-extra-arrows` permite que un arco/ballesta MMOItem o un MMOItem de offhand
+active una ráfaga, un abanico horizontal o un volley. El sistema solo se ejecuta en
+`EntityShootBowEvent`, clona la flecha real y aplica límites, anti-Multishot, despawn
+corto y pickup bloqueado a las copias.
+
+Consulta `src/main/resources/amulets.yml` para ejemplos completos.

@@ -1,5 +1,6 @@
 package com.mdvcraft.tools;
 
+import io.papermc.paper.datacomponent.DataComponentTypes;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
@@ -42,6 +43,8 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
+import org.bukkit.event.player.PlayerItemDamageEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
@@ -260,6 +263,12 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private boolean customDurabilityProtectionUseMmoItemsNbt;
     private final Set<String> customDurabilityProtectionHookedEvents = new HashSet<>();
 
+    // Puente visual ultraligero para PLAYER_HEAD con Custom Durability de MMOItems.
+    // No toca ningún otro material y no usa tareas periódicas.
+    private boolean playerHeadDurabilityBarEnabled;
+    private final Set<String> playerHeadDurabilityBarHookedEvents = new HashSet<>();
+    private final Set<UUID> playerHeadDurabilityBarSyncQueued = new HashSet<>();
+
     private boolean mmoNbtReflectionTried;
     private Class<?> mmoNbtItemClass;
     private Method mmoNbtGetMethod;
@@ -329,7 +338,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         Bukkit.getPluginManager().registerEvents(this, this);
         registerWeaponSwapLockExternalEvents();
         registerCustomDurabilityProtectionEvent();
+        registerPlayerHeadDurabilityBarExternalEvents();
         registerPlaceholderExpansion();
+        if (playerHeadDurabilityBarEnabled) {
+            for (Player player : Bukkit.getOnlinePlayers()) schedulePlayerHeadDurabilityBarSync(player);
+        }
         getLogger().info("MDVTools activado.");
     }
 
@@ -340,6 +353,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         weaponSwapLastWeaponBeforeNonWeapon.clear();
         twoHandedAbilityLockLastBlockedMessage.clear();
         abilityDurabilityLastCharge.clear();
+        playerHeadDurabilityBarSyncQueued.clear();
         rangedExtraArrowLastShot.clear();
         rangedExtraArrowCooldowns.clear();
         identificationSuppressedTargets.clear();
@@ -466,6 +480,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         loadTwoHandedAbilityLockSettings();
         loadAbilityDurabilityCostSettings();
         loadCustomDurabilityProtectionSettings();
+        loadPlayerHeadDurabilityBarSettings();
         loadCustomDropBehaviorSettings();
         loadCustomDrops();
 
@@ -896,6 +911,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         customDurabilityProtectionEnabled = getConfig().getBoolean("custom-durability-protection.enabled", true);
         customDurabilityProtectionUseItemMeta = getConfig().getBoolean("custom-durability-protection.detect.item-meta-unbreakable", true);
         customDurabilityProtectionUseMmoItemsNbt = getConfig().getBoolean("custom-durability-protection.detect.mmoitems-unbreakable-stat", true);
+    }
+
+    private void loadPlayerHeadDurabilityBarSettings() {
+        playerHeadDurabilityBarEnabled = getConfig().getBoolean("player-head-durability-bar.enabled", true);
+        if (!playerHeadDurabilityBarEnabled) playerHeadDurabilityBarSyncQueued.clear();
     }
 
     private void loadAbilityDurabilityCostSettings() {
@@ -2489,30 +2509,50 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
     private void handleCustomDurabilityProtectionEvent(Event event) {
-        if (!customDurabilityProtectionEnabled) return;
-        if (!(event instanceof Cancellable cancellable) || cancellable.isCancelled()) return;
+        if (event == null) return;
 
         ItemStack item = extractItemFromCustomDurabilityEvent(event);
+
+        // El mismo evento de MMOItems se aprovecha para sincronizar ÚNICAMENTE
+        // PLAYER_HEAD con Custom Durability. Se difiere 1 tick para leer el valor
+        // final que MMOItems acaba de guardar.
+        if (playerHeadDurabilityBarEnabled && isMmoCustomDurabilityPlayerHead(item)) {
+            Player player = extractPlayerFromCustomDurabilityEvent(event);
+            if (player != null) schedulePlayerHeadDurabilityBarSync(player);
+        }
+
+        if (!customDurabilityProtectionEnabled) return;
+        if (!(event instanceof Cancellable cancellable) || cancellable.isCancelled()) return;
         if (!isCustomDurabilityProtected(item)) return;
 
         cancellable.setCancelled(true);
     }
 
-    private ItemStack extractItemFromCustomDurabilityEvent(Event event) {
+    private Object extractDurabilitySource(Event event) {
         if (event == null) return null;
 
-        try {
-            // CustomDurabilityDamage#getItem() -> CustomDurabilityItem
-            Method getSourceItem = event.getClass().getMethod("getItem");
-            Object sourceItem = getSourceItem.invoke(event);
-            if (sourceItem == null) return null;
+        // API actual: getSourceItem(). Versiones anteriores/forks pueden exponer getItem().
+        for (String methodName : new String[]{"getSourceItem", "getItem"}) {
+            try {
+                Method method = event.getClass().getMethod(methodName);
+                Object source = method.invoke(event);
+                if (source != null) return source;
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
 
-            // DurabilityItem#getNBTItem() -> NBTItem
+    private ItemStack extractItemFromCustomDurabilityEvent(Event event) {
+        Object sourceItem = extractDurabilitySource(event);
+        if (sourceItem == null) return null;
+
+        try {
+            // DurabilityItem#getNBTItem() -> NBTItem -> getItem() -> ItemStack
             Method getNbtItem = sourceItem.getClass().getMethod("getNBTItem");
             Object nbtItem = getNbtItem.invoke(sourceItem);
             if (nbtItem == null) return null;
 
-            // NBTItem#getItem() -> ItemStack
             Method getItem = nbtItem.getClass().getMethod("getItem");
             Object value = getItem.invoke(nbtItem);
             return value instanceof ItemStack stack ? stack : null;
@@ -2522,6 +2562,19 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
                         + throwable.getClass().getSimpleName()
                         + (throwable.getMessage() == null ? "" : " - " + throwable.getMessage()));
             }
+            return null;
+        }
+    }
+
+    private Player extractPlayerFromCustomDurabilityEvent(Event event) {
+        Object sourceItem = extractDurabilitySource(event);
+        if (sourceItem == null) return null;
+
+        try {
+            Method getPlayer = sourceItem.getClass().getMethod("getPlayer");
+            Object value = getPlayer.invoke(sourceItem);
+            return value instanceof Player player ? player : null;
+        } catch (Throwable ignored) {
             return null;
         }
     }
@@ -2549,6 +2602,159 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
 
         return false;
+    }
+
+    /**
+     * Registra solo los dos eventos extra que necesita la barra visual:
+     * ItemBuildEvent para que las cabezas nuevas nazcan con barra y
+     * ItemCustomRepairEvent para refrescarla al reparar.
+     *
+     * CustomDurabilityDamage ya está registrado por el puente de protección
+     * de durabilidad y se reutiliza arriba; no se duplica el listener.
+     */
+    @SuppressWarnings("unchecked")
+    private void registerPlayerHeadDurabilityBarExternalEvents() {
+        if (!playerHeadDurabilityBarEnabled) return;
+
+        registerPlayerHeadDurabilityBarEvent(
+                "net.Indyuce.mmoitems.api.event.ItemBuildEvent",
+                false,
+                event -> {
+                    try {
+                        Method getter = event.getClass().getMethod("getItemStack");
+                        Object value = getter.invoke(event);
+                        if (value instanceof ItemStack item) syncPlayerHeadDurabilityBar(item);
+                    } catch (Throwable throwable) {
+                        if (debug) getLogger().warning("No pude sincronizar ItemBuildEvent: " + throwable.getClass().getSimpleName());
+                    }
+                });
+
+        registerPlayerHeadDurabilityBarEvent(
+                "net.Indyuce.mmoitems.api.event.item.ItemCustomRepairEvent",
+                true,
+                event -> {
+                    ItemStack item = extractItemFromCustomDurabilityEvent(event);
+                    if (!isMmoCustomDurabilityPlayerHead(item)) return;
+                    Player player = extractPlayerFromCustomDurabilityEvent(event);
+                    if (player != null) schedulePlayerHeadDurabilityBarSync(player);
+                });
+    }
+
+    @SuppressWarnings("unchecked")
+    private void registerPlayerHeadDurabilityBarEvent(String className, boolean ignoreCancelled, java.util.function.Consumer<Event> handler) {
+        if (playerHeadDurabilityBarHookedEvents.contains(className)) return;
+
+        try {
+            Class<?> rawClass = Class.forName(className);
+            if (!Event.class.isAssignableFrom(rawClass)) return;
+
+            Class<? extends Event> eventClass = (Class<? extends Event>) rawClass;
+            EventExecutor executor = (listener, event) -> {
+                if (!playerHeadDurabilityBarEnabled) return;
+                try {
+                    handler.accept(event);
+                } catch (Throwable throwable) {
+                    if (debug) {
+                        getLogger().warning("Error en player-head-durability-bar para " + event.getEventName()
+                                + ": " + throwable.getClass().getSimpleName()
+                                + (throwable.getMessage() == null ? "" : " - " + throwable.getMessage()));
+                    }
+                }
+            };
+
+            Bukkit.getPluginManager().registerEvent(eventClass, this, EventPriority.MONITOR, executor, this, ignoreCancelled);
+            playerHeadDurabilityBarHookedEvents.add(className);
+            debug("player-head-durability-bar conectado a " + className + ".");
+        } catch (ClassNotFoundException ignored) {
+            debug("player-head-durability-bar: evento no encontrado: " + className);
+        } catch (Throwable throwable) {
+            getLogger().warning("No pude registrar player-head-durability-bar para " + className + ": "
+                    + throwable.getClass().getSimpleName()
+                    + (throwable.getMessage() == null ? "" : " - " + throwable.getMessage()));
+        }
+    }
+
+    private boolean isMmoCustomDurabilityPlayerHead(ItemStack item) {
+        if (!playerHeadDurabilityBarEnabled || item == null || item.getType() != Material.PLAYER_HEAD) return false;
+        Integer max = readMmoItemInteger(item, "MMOITEMS_MAX_DURABILITY");
+        return max != null && max > 0;
+    }
+
+    /**
+     * Convierte la durabilidad restante de MMOItems en componentes vanilla
+     * EXCLUSIVAMENTE para PLAYER_HEAD. Los componentes son solo una barra visual;
+     * MMOItems sigue siendo la fuente real de durabilidad.
+     */
+    @SuppressWarnings("UnstableApiUsage")
+    private boolean syncPlayerHeadDurabilityBar(ItemStack item) {
+        if (!isMmoCustomDurabilityPlayerHead(item)) return false;
+
+        Integer maxValue = readMmoItemInteger(item, "MMOITEMS_MAX_DURABILITY");
+        if (maxValue == null || maxValue <= 0) return false;
+        int max = maxValue;
+
+        Integer currentValue = readMmoItemInteger(item, "MMOITEMS_DURABILITY");
+        int current = currentValue == null ? max : Math.max(0, Math.min(max, currentValue));
+
+        int visualDamage = Math.max(0, max - current);
+        // DAMAGE=0 suele ocultar la barra. Con 1 queda visualmente llena y visible.
+        if (max > 1 && visualDamage == 0) visualDamage = 1;
+        visualDamage = Math.min(Math.max(0, max - 1), visualDamage);
+
+        int currentMaxStack = item.getDataOrDefault(DataComponentTypes.MAX_STACK_SIZE, item.getType().getMaxStackSize());
+        int currentMaxDamage = item.getDataOrDefault(DataComponentTypes.MAX_DAMAGE, 0);
+        int currentDamage = item.getDataOrDefault(DataComponentTypes.DAMAGE, 0);
+
+        if (currentMaxStack == 1 && currentMaxDamage == max && currentDamage == visualDamage) return false;
+
+        // MAX_DAMAGE no puede coexistir con stack size > 1.
+        item.setData(DataComponentTypes.MAX_STACK_SIZE, 1);
+        item.setData(DataComponentTypes.MAX_DAMAGE, max);
+        item.setData(DataComponentTypes.DAMAGE, visualDamage);
+        return true;
+    }
+
+    /**
+     * Una sola pasada de inventario y solo cuando realmente hubo un evento de
+     * durabilidad/reparación o al entrar. No existe escaneo periódico.
+     */
+    private void syncPlayerHeadDurabilityBars(Player player) {
+        if (!playerHeadDurabilityBarEnabled || player == null || !player.isOnline()) return;
+
+        PlayerInventory inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item == null || item.getType() != Material.PLAYER_HEAD) continue;
+            if (syncPlayerHeadDurabilityBar(item)) inventory.setItem(slot, item);
+        }
+    }
+
+    private void schedulePlayerHeadDurabilityBarSync(Player player) {
+        if (!playerHeadDurabilityBarEnabled || player == null || !player.isOnline()) return;
+
+        UUID uuid = player.getUniqueId();
+        if (!playerHeadDurabilityBarSyncQueued.add(uuid)) return;
+
+        Bukkit.getScheduler().runTask(this, () -> {
+            playerHeadDurabilityBarSyncQueued.remove(uuid);
+            syncPlayerHeadDurabilityBars(player);
+        });
+    }
+
+    /**
+     * Al añadir MAX_DAMAGE una PLAYER_HEAD pasa a ser damageable para vanilla.
+     * Cancelamos SOLO ese desgaste vanilla para que no existan dos sistemas de
+     * durabilidad. MMOItems sigue descontando su Custom Durability por su cuenta.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerHeadVanillaDurabilityDamage(PlayerItemDamageEvent event) {
+        if (!isMmoCustomDurabilityPlayerHead(event.getItem())) return;
+        event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerHeadDurabilityJoin(PlayerJoinEvent event) {
+        if (playerHeadDurabilityBarEnabled) schedulePlayerHeadDurabilityBarSync(event.getPlayer());
     }
 
     @SuppressWarnings("unchecked")
@@ -2840,6 +3046,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             if (result == null) {
                 player.getInventory().setItemInMainHand(null);
             } else if (result instanceof ItemStack newItem) {
+                syncPlayerHeadDurabilityBar(newItem);
                 player.getInventory().setItemInMainHand(newItem);
             } else {
                 return null;
@@ -4285,6 +4492,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             loadSettings();
             registerWeaponSwapLockExternalEvents();
+            registerCustomDurabilityProtectionEvent();
+            registerPlayerHeadDurabilityBarExternalEvents();
+            if (playerHeadDurabilityBarEnabled) {
+                for (Player player : Bukkit.getOnlinePlayers()) schedulePlayerHeadDurabilityBarSync(player);
+            }
             sender.sendMessage(prefix + msgReloaded);
             return true;
         }

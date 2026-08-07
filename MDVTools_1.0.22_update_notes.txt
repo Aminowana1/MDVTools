@@ -1,0 +1,42 @@
+MDVTools 1.0.22
+================
+
+CAMBIOS
+-------
+1. Barra vanilla para PLAYER_HEAD con Custom Durability de MMOItems.
+   - Solo se activa si el material es PLAYER_HEAD.
+   - Además exige MMOITEMS_MAX_DURABILITY > 0.
+   - No toca armas, herramientas, cuero, hierro ni ningún otro item.
+
+2. MMOItems sigue siendo la fuente real de durabilidad.
+   - MDVTools solo refleja MMOITEMS_MAX_DURABILITY y MMOITEMS_DURABILITY
+     a minecraft:max_damage / minecraft:damage.
+   - Se fuerza max_stack_size = 1 porque Minecraft lo requiere para max_damage.
+
+3. Sin doble desgaste.
+   - Solo para esas PLAYER_HEAD se cancela PlayerItemDamageEvent vanilla.
+   - El desgaste personalizado de MMOItems sigue funcionando normalmente.
+
+4. Sin loops.
+   - ItemBuildEvent: sincroniza una cabeza recién generada.
+   - CustomDurabilityDamage: refresca después de perder durabilidad.
+   - ItemCustomRepairEvent: refresca después de reparar.
+   - PlayerJoinEvent: una pasada puntual para migrar cabezas antiguas.
+   - No existe tarea repetitiva ni escaneo por tick.
+
+5. Compatibilidad.
+   - MMOItems y MythicLib continúan como softdepend.
+   - No se añadió dependencia Maven nueva.
+   - Se mejoró la extracción del source item del evento de durabilidad para
+     aceptar getSourceItem() y el alias antiguo getItem().
+
+CONFIG NUEVA
+------------
+player-head-durability-bar:
+  enabled: true
+
+COMPILACION
+-----------
+Java 21 / Paper 1.21.6
+mvn clean package
+Salida: target/MDVTools-1.0.22.jar

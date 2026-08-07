@@ -1,4 +1,4 @@
-# MDVTools 1.0.19
+# MDVTools 1.0.22
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -395,6 +395,22 @@ ability-durability-cost:
 
   # Evita cobrar doble si MMOItems y MythicLib disparan eventos para el mismo casteo.
   dedupe-window-ms: 75
+
+
+# ==========================================================
+# Barra vanilla para PLAYER_HEAD con Custom Durability de MMOItems
+#
+# SOLO afecta PLAYER_HEAD que tengan MMOITEMS_MAX_DURABILITY > 0.
+# No toca armas, herramientas, cuero, hierro ni ningún otro material.
+#
+# Es event-driven: no hay tareas periódicas ni escaneos por tick.
+# MMOItems mantiene la durabilidad real; MDVTools solo refleja el valor
+# en minecraft:max_damage / minecraft:damage para dibujar la barra.
+# También cancela únicamente el desgaste VANILLA de esas PLAYER_HEAD
+# para evitar que existan dos sistemas de durabilidad a la vez.
+# ==========================================================
+player-head-durability-bar:
+  enabled: true
 
 
 # ==========================================================

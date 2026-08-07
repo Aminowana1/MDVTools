@@ -1,4 +1,25 @@
-# MDVTools 1.0.21
+# MDVTools 1.0.22
+
+
+## MDVTools 1.0.22 - Barra de durabilidad para PLAYER_HEAD MMOItems
+
+Añade un puente visual exclusivo para `PLAYER_HEAD` que tengan `max-durability`
+personalizada de MMOItems. No toca ningún otro material.
+
+- MMOItems sigue controlando la durabilidad real mediante `MMOITEMS_MAX_DURABILITY` / `MMOITEMS_DURABILITY`.
+- MDVTools refleja esos valores en `minecraft:max_damage` y `minecraft:damage` para que el cliente muestre la barra vanilla.
+- Se fuerza `minecraft:max_stack_size: 1`, requerido por `max_damage`.
+- Se cancela únicamente `PlayerItemDamageEvent` de esas cabezas para que la durabilidad vanilla no compita con la Custom Durability de MMOItems.
+- Las cabezas nuevas se sincronizan con `ItemBuildEvent`; daño y reparación se sincronizan por eventos de MMOItems; al entrar se hace una sola pasada para actualizar objetos antiguos.
+- No hay timers, loops por tick ni escaneo periódico.
+- MMOItems y MythicLib siguen siendo `softdepend`; no se agregan dependencias Maven nuevas.
+
+Config nueva:
+
+```yml
+player-head-durability-bar:
+  enabled: true
+```
 
 ## MDVTools 1.0.21 - Amuletos en archivo separado y bloqueo global de F
 
@@ -247,7 +268,7 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.21.jar`.
+El `.jar` queda en `target/MDVTools-1.0.22.jar`.
 
 
 ## MDVTools 1.0.9

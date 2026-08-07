@@ -1,0 +1,16 @@
+# MDVTools 1.0.23
+#
+# Si vienes de 1.0.22 y YA tienes este bloque, no agregues nada nuevo.
+# No se introdujeron claves obligatorias en 1.0.23.
+#
+# Solo verifica que tu config actual conserve:
+
+player-head-durability-bar:
+  enabled: true
+
+# El bloque ability-durability-cost existente también se conserva sin cambios:
+# ability-durability-cost:
+#   enabled: true
+#   cost: 1
+#   only-custom-durability: true
+#   dedupe-window-ms: 75

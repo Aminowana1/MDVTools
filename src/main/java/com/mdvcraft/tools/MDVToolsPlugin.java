@@ -254,7 +254,9 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private int abilityDurabilityCostAmount;
     private boolean abilityDurabilityOnlyCustomDurability;
     private long abilityDurabilityDedupeWindowMs;
+    private static final long ABILITY_DURABILITY_SOURCE_HINT_TTL_MS = 250L;
     private final Map<UUID, AbilityDurabilityCharge> abilityDurabilityLastCharge = new HashMap<>();
+    private final Map<UUID, AbilityDurabilitySourceHint> abilityDurabilitySourceHints = new HashMap<>();
 
     // Protección event-driven para la durabilidad personalizada de MMOItems.
     // Cualquier item con unbreakable: true puede conservar su durabilidad custom intacta.
@@ -353,6 +355,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         weaponSwapLastWeaponBeforeNonWeapon.clear();
         twoHandedAbilityLockLastBlockedMessage.clear();
         abilityDurabilityLastCharge.clear();
+        abilityDurabilitySourceHints.clear();
         playerHeadDurabilityBarSyncQueued.clear();
         rangedExtraArrowLastShot.clear();
         rangedExtraArrowCooldowns.clear();
@@ -926,6 +929,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         if (!abilityDurabilityCostEnabled || abilityDurabilityCostAmount <= 0) {
             abilityDurabilityLastCharge.clear();
+            abilityDurabilitySourceHints.clear();
         }
     }
 
@@ -1463,6 +1467,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         weaponSwapLockUntil.remove(id);
         weaponSwapLockLastBlockedMessage.remove(id);
         twoHandedAbilityLockLastBlockedMessage.remove(id);
+        abilityDurabilityLastCharge.remove(id);
+        abilityDurabilitySourceHints.remove(id);
         weaponSwapLastWeaponBeforeNonWeapon.remove(id);
         professionBonusCache.remove(id);
         rangedExtraArrowLastShot.remove(id);
@@ -2696,19 +2702,37 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         Integer currentValue = readMmoItemInteger(item, "MMOITEMS_DURABILITY");
         int current = currentValue == null ? max : Math.max(0, Math.min(max, currentValue));
 
-        int visualDamage = Math.max(0, max - current);
-        // DAMAGE=0 suele ocultar la barra. Con 1 queda visualmente llena y visible.
-        if (max > 1 && visualDamage == 0) visualDamage = 1;
-        visualDamage = Math.min(Math.max(0, max - 1), visualDamage);
-
+        // La cabeza debe ser no-stackeable para poder activar MAX_DAMAGE cuando
+        // realmente haga falta mostrar la barra. Esto no crea ningún loop.
+        boolean changed = false;
         int currentMaxStack = item.getDataOrDefault(DataComponentTypes.MAX_STACK_SIZE, item.getType().getMaxStackSize());
+        if (currentMaxStack != 1) {
+            item.setData(DataComponentTypes.MAX_STACK_SIZE, 1);
+            changed = true;
+        }
+
+        // Al 100% de durabilidad NO ponemos MAX_DAMAGE/DAMAGE. Así el cliente
+        // no dibuja ninguna barra. En el primer punto perdido, CustomDurabilityDamage
+        // vuelve a llamar este método y la barra aparece automáticamente.
+        if (current >= max || isCustomDurabilityProtected(item)) {
+            if (item.hasData(DataComponentTypes.DAMAGE)) {
+                item.unsetData(DataComponentTypes.DAMAGE);
+                changed = true;
+            }
+            if (item.hasData(DataComponentTypes.MAX_DAMAGE)) {
+                item.unsetData(DataComponentTypes.MAX_DAMAGE);
+                changed = true;
+            }
+            return changed;
+        }
+
+        int visualDamage = Math.max(1, max - current);
+        visualDamage = Math.min(Math.max(1, max - 1), visualDamage);
+
         int currentMaxDamage = item.getDataOrDefault(DataComponentTypes.MAX_DAMAGE, 0);
         int currentDamage = item.getDataOrDefault(DataComponentTypes.DAMAGE, 0);
+        if (currentMaxDamage == max && currentDamage == visualDamage) return changed;
 
-        if (currentMaxStack == 1 && currentMaxDamage == max && currentDamage == visualDamage) return false;
-
-        // MAX_DAMAGE no puede coexistir con stack size > 1.
-        item.setData(DataComponentTypes.MAX_STACK_SIZE, 1);
         item.setData(DataComponentTypes.MAX_DAMAGE, max);
         item.setData(DataComponentTypes.DAMAGE, visualDamage);
         return true;
@@ -2742,11 +2766,17 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     }
 
     /**
-     * Al añadir MAX_DAMAGE una PLAYER_HEAD pasa a ser damageable para vanilla.
-     * Cancelamos SOLO ese desgaste vanilla para que no existan dos sistemas de
-     * durabilidad. MMOItems sigue descontando su Custom Durability por su cuenta.
+     * Al añadir MAX_DAMAGE una PLAYER_HEAD puede disparar PlayerItemDamageEvent,
+     * aunque Material.PLAYER_HEAD siga teniendo maxDurability vanilla = 0.
+     *
+     * MMOItems ya posee OTRO camino específico para materiales no-damageable
+     * (EntityDamageEvent -> Custom Durability). Si dejamos llegar este evento a
+     * su listener HIGHEST, la cabeza pierde durabilidad por ambos caminos y baja
+     * el doble. Por eso se cancela en LOWEST, antes que MMOItems, SOLO para estas
+     * PLAYER_HEAD. El desgaste custom real sigue ocurriendo una única vez por el
+     * camino de materiales no-damageable.
      */
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onPlayerHeadVanillaDurabilityDamage(PlayerItemDamageEvent event) {
         if (!isMmoCustomDurabilityPlayerHead(event.getItem())) return;
         event.setCancelled(true);
@@ -2755,6 +2785,73 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerHeadDurabilityJoin(PlayerJoinEvent event) {
         if (playerHeadDurabilityBarEnabled) schedulePlayerHeadDurabilityBarSync(event.getPlayer());
+    }
+
+    /**
+     * Guarda una pista diminuta de qué mano originó la interacción. MMOItems y
+     * MythicLib disparan después sus eventos de habilidad de forma síncrona, así
+     * que una ventana de 250 ms es más que suficiente y evita adivinar siempre
+     * la mainhand. No se agenda ninguna tarea.
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onAbilityDurabilityInteractSource(PlayerInteractEvent event) {
+        if (!abilityDurabilityCostEnabled) return;
+        EquipmentSlot hand = event.getHand();
+        if (hand != EquipmentSlot.HAND && hand != EquipmentSlot.OFF_HAND) return;
+        rememberAbilityDurabilitySource(event.getPlayer(), hand, event.getItem());
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onAbilityDurabilityInteractEntitySource(PlayerInteractEntityEvent event) {
+        if (!abilityDurabilityCostEnabled) return;
+        EquipmentSlot hand = event.getHand();
+        if (hand != EquipmentSlot.HAND && hand != EquipmentSlot.OFF_HAND) return;
+        ItemStack item = event.getPlayer().getInventory().getItem(hand);
+        rememberAbilityDurabilitySource(event.getPlayer(), hand, item);
+    }
+
+    /**
+     * MDVCRAFT usa SWAP_ITEMS/F para castear desde offhand. Si hay un MMOItem en
+     * offhand, esa es la fuente prioritaria. Así un amuleto/escudo no gasta por
+     * error la espada que el jugador tenga en mainhand.
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onAbilityDurabilitySwapSource(PlayerSwapHandItemsEvent event) {
+        if (!abilityDurabilityCostEnabled) return;
+        Player player = event.getPlayer();
+        ItemStack offhand = player.getInventory().getItemInOffHand();
+        if (isMmoItem(offhand)) {
+            rememberAbilityDurabilitySource(player, EquipmentSlot.OFF_HAND, offhand);
+            return;
+        }
+
+        ItemStack main = player.getInventory().getItemInMainHand();
+        if (isRealItem(main)) rememberAbilityDurabilitySource(player, EquipmentSlot.HAND, main);
+    }
+
+    /**
+     * Habilidades ATTACK suelen nacer dentro de EntityDamageByEntityEvent y no
+     * pasan por PlayerInteractEvent. Marcamos mainhand solo para ese caso.
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void onAbilityDurabilityAttackSource(EntityDamageByEntityEvent event) {
+        if (!abilityDurabilityCostEnabled || !(event.getDamager() instanceof Player player)) return;
+        ItemStack main = player.getInventory().getItemInMainHand();
+        if (isRealItem(main)) rememberAbilityDurabilitySource(player, EquipmentSlot.HAND, main);
+    }
+
+    private void rememberAbilityDurabilitySource(Player player, EquipmentSlot slot, ItemStack item) {
+        if (!abilityDurabilityCostEnabled || player == null || slot == null || !isRealItem(item)) return;
+        if (slot != EquipmentSlot.HAND && slot != EquipmentSlot.OFF_HAND) return;
+
+        // Solo guardamos mano + timestamp. No leemos NBT aquí: este handler puede
+        // ejecutarse en interacciones normales y queremos que el coste sea mínimo.
+        abilityDurabilitySourceHints.put(player.getUniqueId(),
+                new AbilityDurabilitySourceHint(slot, System.currentTimeMillis()));
+    }
+
+    private boolean isMmoItem(ItemStack item) {
+        return isRealItem(item) && readMmoItemTypeId(item) != null;
     }
 
     @SuppressWarnings("unchecked")
@@ -2829,7 +2926,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             }
         }
 
-        if (!chargeAbilityCustomDurability(player)) {
+        AbilityDurabilitySource source = resolveAbilityDurabilitySource(event, player);
+        if (source != null && !chargeAbilityCustomDurability(player, source.item, source.slot)) {
             cancellable.setCancelled(true);
         }
     }
@@ -2970,24 +3068,137 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         player.sendMessage(prefix + twoHandedAbilityLockBlockedMessage);
     }
 
-    private boolean chargeAbilityCustomDurability(Player player) {
+    private AbilityDurabilitySource resolveAbilityDurabilitySource(Event event, Player player) {
+        if (player == null) return null;
+
+        // Si el evento expone item + mano de forma explícita, esa es la fuente
+        // más fiable y no necesitamos ninguna pista adicional.
+        ItemStack directItem = extractAbilitySourceItem(event);
+        EquipmentSlot directSlot = extractAbilitySourceSlot(event);
+        if (isRealItem(directItem)
+                && (directSlot == EquipmentSlot.HAND || directSlot == EquipmentSlot.OFF_HAND)) {
+            abilityDurabilitySourceHints.remove(player.getUniqueId());
+            return new AbilityDurabilitySource(directItem, directSlot);
+        }
+
+        // Fallback preferido: mano del input Bukkit inmediatamente anterior.
+        // Esto es lo que permite distinguir con seguridad mainhand de offhand.
+        AbilityDurabilitySourceHint hint = abilityDurabilitySourceHints.get(player.getUniqueId());
+        if (hint != null) {
+            long now = System.currentTimeMillis();
+            if (now - hint.createdAtMs <= ABILITY_DURABILITY_SOURCE_HINT_TTL_MS) {
+                ItemStack hintedItem = player.getInventory().getItem(hint.slot);
+                if (isRealItem(hintedItem)) {
+                    abilityDurabilitySourceHints.remove(player.getUniqueId());
+                    return new AbilityDurabilitySource(hintedItem, hint.slot);
+                }
+            } else {
+                abilityDurabilitySourceHints.remove(player.getUniqueId());
+            }
+        }
+
+        // Último fallback: si el evento trae el item pero no la mano, buscamos
+        // en las dos manos. Si no se puede resolver, NO adivinamos mainhand.
+        if (isRealItem(directItem)) {
+            EquipmentSlot located = locateHeldAbilityItem(player, directItem);
+            if (located != null) return new AbilityDurabilitySource(directItem, located);
+        }
+        return null;
+    }
+
+    private ItemStack extractAbilitySourceItem(Event event) {
+        if (event == null) return null;
+        for (String methodName : new String[]{"getItemStack", "getItem", "getSourceItem", "getWeapon"}) {
+            try {
+                Method method = event.getClass().getMethod(methodName);
+                Object value = method.invoke(event);
+                ItemStack item = itemStackFromUnknownAbilitySource(value);
+                if (item != null) return item;
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private ItemStack itemStackFromUnknownAbilitySource(Object source) {
+        if (source == null) return null;
+        if (source instanceof ItemStack item) return item;
+
+        for (String methodName : new String[]{"getItemStack", "getItem"}) {
+            try {
+                Method method = source.getClass().getMethod(methodName);
+                Object value = method.invoke(source);
+                if (value instanceof ItemStack item) return item;
+            } catch (Throwable ignored) {
+            }
+        }
+
+        try {
+            Method getNbtItem = source.getClass().getMethod("getNBTItem");
+            Object nbt = getNbtItem.invoke(source);
+            if (nbt != null) {
+                Method getItem = nbt.getClass().getMethod("getItem");
+                Object value = getItem.invoke(nbt);
+                if (value instanceof ItemStack item) return item;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private EquipmentSlot extractAbilitySourceSlot(Event event) {
+        if (event == null) return null;
+        for (String methodName : new String[]{"getHand", "getSlot", "getEquipmentSlot", "getSourceSlot"}) {
+            try {
+                Method method = event.getClass().getMethod(methodName);
+                Object value = method.invoke(event);
+                EquipmentSlot slot = normalizeAbilityEquipmentSlot(value);
+                if (slot != null) return slot;
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private EquipmentSlot normalizeAbilityEquipmentSlot(Object value) {
+        if (value == null) return null;
+        if (value instanceof EquipmentSlot slot) return slot;
+
+        String name = value.toString().toUpperCase(Locale.ROOT);
+        if (name.contains("OFF") && name.contains("HAND")) return EquipmentSlot.OFF_HAND;
+        if (name.equals("HAND") || name.contains("MAIN_HAND") || name.contains("MAINHAND")) return EquipmentSlot.HAND;
+        return null;
+    }
+
+    private EquipmentSlot locateHeldAbilityItem(Player player, ItemStack item) {
+        if (player == null || !isRealItem(item)) return null;
+        ItemStack main = player.getInventory().getItemInMainHand();
+        ItemStack offhand = player.getInventory().getItemInOffHand();
+
+        if (sameAbilityItem(main, item)) return EquipmentSlot.HAND;
+        if (sameAbilityItem(offhand, item)) return EquipmentSlot.OFF_HAND;
+        return null;
+    }
+
+    private boolean sameAbilityItem(ItemStack first, ItemStack second) {
+        if (!isRealItem(first) || !isRealItem(second)) return false;
+        if (first == second) return true;
+        if (first.getType() != second.getType()) return false;
+        return getAbilityDurabilityItemIdentity(first).equals(getAbilityDurabilityItemIdentity(second));
+    }
+
+    private boolean chargeAbilityCustomDurability(Player player, ItemStack item, EquipmentSlot slot) {
         if (!abilityDurabilityCostEnabled || abilityDurabilityCostAmount <= 0) return true;
-        if (player == null) return true;
+        if (player == null || slot == null) return true;
         if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return true;
+        if (!isRealItem(item)) return true;
 
-        PlayerInventory inventory = player.getInventory();
-        ItemStack item = inventory.getItemInMainHand();
-        if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) return true;
-
-        // Evita incluso entrar al cobro manual de habilidades. El listener del evento
-        // de MMOItems también lo cubre, pero esta comprobación protege items viejos
-        // que hayan quedado accidentalmente en 0 de durabilidad.
+        // Nunca se adivina mainhand: solo se cobra al item identificado como fuente.
         if (isCustomDurabilityProtected(item)) return true;
-
         if (abilityDurabilityOnlyCustomDurability && !hasMmoCustomDurability(item)) return true;
 
         UUID playerId = player.getUniqueId();
-        String identity = getAbilityDurabilityItemIdentity(item);
+        String identity = slot.name() + ":" + getAbilityDurabilityItemIdentity(item);
         long now = System.currentTimeMillis();
         AbilityDurabilityCharge lastCharge = abilityDurabilityLastCharge.get(playerId);
         if (lastCharge != null
@@ -2997,21 +3208,17 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             return true;
         }
 
-        Boolean charged = chargeAbilityCustomDurabilityWithMmoItems(player, item);
+        Boolean charged = chargeAbilityCustomDurabilityWithMmoItems(player, item, slot);
         if (charged != null) {
-            if (charged) {
-                abilityDurabilityLastCharge.put(playerId, new AbilityDurabilityCharge(identity, now));
-            }
+            if (charged) abilityDurabilityLastCharge.put(playerId, new AbilityDurabilityCharge(identity, now));
             return charged;
         }
 
-        // Fallback mínimo: si por alguna razón no se pudo enganchar la API de durabilidad,
-        // no cancela ni rompe habilidades. Así no deja armas inutilizables por incompatibilidad.
         if (debug) getLogger().warning("No pude conectar con la API de durabilidad custom de MMOItems para cobrar habilidad.");
         return true;
     }
 
-    private Boolean chargeAbilityCustomDurabilityWithMmoItems(Player player, ItemStack item) {
+    private Boolean chargeAbilityCustomDurabilityWithMmoItems(Player player, ItemStack item, EquipmentSlot slot) {
         if (!ensureMmoDurabilityReflection()) return null;
 
         try {
@@ -3020,7 +3227,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
                 durabilityItem = mmoDurabilityConstructorItemStack.newInstance(player, item);
             } else if (mmoDurabilityConstructorNbt != null) {
                 Object nbt = mmoNbtGetMethod.invoke(null, item);
-                durabilityItem = mmoDurabilityConstructorNbt.newInstance(player, nbt, EquipmentSlot.HAND);
+                durabilityItem = mmoDurabilityConstructorNbt.newInstance(player, nbt, slot);
             } else {
                 return null;
             }
@@ -3037,17 +3244,16 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             }
 
             if (current == 0) return false;
-
             if (mmoDurabilityDecreaseMethod == null || mmoDurabilityToItemMethod == null) return null;
 
             mmoDurabilityDecreaseMethod.invoke(durabilityItem, abilityDurabilityCostAmount);
             Object result = mmoDurabilityToItemMethod.invoke(durabilityItem);
 
             if (result == null) {
-                player.getInventory().setItemInMainHand(null);
+                setAbilitySourceItem(player, slot, null);
             } else if (result instanceof ItemStack newItem) {
                 syncPlayerHeadDurabilityBar(newItem);
-                player.getInventory().setItemInMainHand(newItem);
+                setAbilitySourceItem(player, slot, newItem);
             } else {
                 return null;
             }
@@ -3056,6 +3262,12 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             if (debug) getLogger().warning("Error cobrando durabilidad custom por habilidad: " + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
             return null;
         }
+    }
+
+    private void setAbilitySourceItem(Player player, EquipmentSlot slot, ItemStack item) {
+        PlayerInventory inventory = player.getInventory();
+        if (slot == EquipmentSlot.OFF_HAND) inventory.setItemInOffHand(item);
+        else inventory.setItemInMainHand(item);
     }
 
     private boolean hasMmoCustomDurability(ItemStack item) {
@@ -4600,6 +4812,26 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         AutoReloadShot(UUID playerId, long createdAtMs) {
             this.playerId = playerId;
             this.createdAtMs = createdAtMs;
+        }
+    }
+
+    private static final class AbilityDurabilitySourceHint {
+        final EquipmentSlot slot;
+        final long createdAtMs;
+
+        AbilityDurabilitySourceHint(EquipmentSlot slot, long createdAtMs) {
+            this.slot = slot;
+            this.createdAtMs = createdAtMs;
+        }
+    }
+
+    private static final class AbilityDurabilitySource {
+        final ItemStack item;
+        final EquipmentSlot slot;
+
+        AbilityDurabilitySource(ItemStack item, EquipmentSlot slot) {
+            this.item = item;
+            this.slot = slot;
         }
     }
 

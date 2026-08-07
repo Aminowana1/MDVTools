@@ -1,4 +1,4 @@
-# MDVTools 1.0.22
+# MDVTools 1.0.23
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -385,7 +385,10 @@ weapon-swap-lock:
 # no pueda castear habilidades mientras la otra mano esté ocupada.
 # Aplica en ambos sentidos: 2 manos en mainhand + offhand ocupada, o 2 manos en offhand + mainhand ocupada.
 # Es event-driven y solo revisa cuando se intenta usar una habilidad MMOItems/MythicLib.
-# Cobra 1 punto de durabilidad custom de MMOItems cada vez que se castea una habilidad.
+# Cobra 1 punto de durabilidad custom de MMOItems al ITEM que originó la habilidad.
+# Distingue mainhand/offhand para que un amuleto o escudo de offhand NO desgaste
+# por error el arma de la mano principal. Si no puede identificar la fuente con
+# seguridad, no cobra a ningún item en lugar de adivinar la mainhand.
 # No muestra mensajes propios: MMOItems sigue manejando su durabilidad/lore.
 # Solo afecta items con max-durability custom de MMOItems.
 ability-durability-cost:
@@ -406,8 +409,9 @@ ability-durability-cost:
 # Es event-driven: no hay tareas periódicas ni escaneos por tick.
 # MMOItems mantiene la durabilidad real; MDVTools solo refleja el valor
 # en minecraft:max_damage / minecraft:damage para dibujar la barra.
-# También cancela únicamente el desgaste VANILLA de esas PLAYER_HEAD
-# para evitar que existan dos sistemas de durabilidad a la vez.
+# Al 100% de durabilidad la barra se oculta y aparece desde el primer punto perdido.
+# También intercepta en LOWEST únicamente el PlayerItemDamageEvent VANILLA de
+# esas PLAYER_HEAD, antes de MMOItems, para evitar el doble descuento.
 # ==========================================================
 player-head-durability-bar:
   enabled: true

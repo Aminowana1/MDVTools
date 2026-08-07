@@ -1,4 +1,12 @@
-# MDVTools 1.0.22
+# MDVTools 1.0.23
+
+## MDVTools 1.0.23 - Ajustes de durabilidad y offhand
+
+- `PLAYER_HEAD` con Custom Durability: la barra queda oculta al 100% y aparece al perder el primer punto.
+- Corrige el doble desgaste de cabezas: el `PlayerItemDamageEvent` visual se cancela en `LOWEST` antes del listener de MMOItems; MMOItems conserva su desgaste custom normal para materiales no-damageable.
+- El coste de durabilidad de habilidades ya no asume siempre mainhand. Usa la mano real/pista de interacción y prioriza offhand en `SWAP_ITEMS`, evitando que amuletos o escudos gasten la espada equipada.
+- Sin loops ni tareas periódicas nuevas.
+
 
 
 ## MDVTools 1.0.22 - Barra de durabilidad para PLAYER_HEAD MMOItems
@@ -268,7 +276,7 @@ Proyecto Maven para Java 21 / Paper API 1.21.6.
 mvn clean package
 ```
 
-El `.jar` queda en `target/MDVTools-1.0.22.jar`.
+El `.jar` queda en `target/MDVTools-1.0.23.jar`.
 
 
 ## MDVTools 1.0.9

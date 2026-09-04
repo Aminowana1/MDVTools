@@ -3,14 +3,17 @@ package com.mdvcraft.tools.fishing;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.FishHook;
 import org.bukkit.entity.Player;
+import org.bukkit.event.HandlerList;
+import org.bukkit.event.Listener;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.RegisteredListener;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 /**
- * Reflection bridge to MMOCore's FishingManager.
+ * Reflection bridge to MMOCore's FishingManager and active FishingData session.
  *
  * MMOCore versions differ in the calculateDropTable signature:
  * - older builds: calculateDropTable(Player)
@@ -63,6 +66,54 @@ public final class MMOCoreFishingBridge {
             warnOnce("No se pudo consultar la tabla de pesca custom de MMOCore", exception);
             return false;
         }
+    }
+
+    /**
+     * Closes MMOCore's real FishingData instance instead of only deleting the
+     * bobber entity. This is important because MMOCore also keeps an internal
+     * player UUID set, a BukkitRunnable and a dynamically registered listener.
+     * Removing only the hook leaves that state alive briefly and can allow
+     * crossed sessions / multiple active bobbers.
+     *
+     * @return true if the matching MMOCore FishingData session was found and
+     * its own private close() method was invoked.
+     */
+    public boolean closeActiveFishing(Player player, FishHook hook) {
+        if (!resolve() || mmocorePlugin == null) return false;
+
+        try {
+            for (RegisteredListener registered : HandlerList.getRegisteredListeners(mmocorePlugin)) {
+                Listener listener = registered.getListener();
+                Class<?> type = listener.getClass();
+
+                // Current MMOCore: net.Indyuce.mmocore.listener.profession.FishingListener$FishingData
+                if (!type.getName().contains("FishingListener$FishingData")) continue;
+
+                Field playerField = findField(type, "player");
+                Field hookField = findField(type, "hook");
+                Method closeMethod = findNoArgMethod(type, "close");
+                if (playerField == null || hookField == null || closeMethod == null) continue;
+
+                playerField.setAccessible(true);
+                hookField.setAccessible(true);
+                closeMethod.setAccessible(true);
+
+                Object sessionPlayer = playerField.get(listener);
+                Object sessionHook = hookField.get(listener);
+                if (!(sessionPlayer instanceof Player activePlayer) || !(sessionHook instanceof FishHook activeHook)) continue;
+                if (!activePlayer.getUniqueId().equals(player.getUniqueId())) continue;
+                if (!activeHook.getUniqueId().equals(hook.getUniqueId())) continue;
+
+                closeMethod.invoke(listener);
+                return true;
+            }
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            owner.getLogger().warning("[FishingFightTimer] No se pudo cerrar FishingData de MMOCore: "
+                    + exception.getClass().getSimpleName()
+                    + (exception.getMessage() == null ? "" : " - " + exception.getMessage()));
+        }
+
+        return false;
     }
 
     public boolean isAvailable() {
@@ -135,6 +186,18 @@ public final class MMOCoreFishingBridge {
             try {
                 return current.getDeclaredField(name);
             } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        return null;
+    }
+
+    private Method findNoArgMethod(Class<?> type, String name) {
+        Class<?> current = type;
+        while (current != null) {
+            try {
+                return current.getDeclaredMethod(name);
+            } catch (NoSuchMethodException ignored) {
                 current = current.getSuperclass();
             }
         }

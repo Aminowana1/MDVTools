@@ -1,8 +1,11 @@
 package com.mdvcraft.tools.fishing;
 
 import org.bukkit.ChatColor;
+import org.bukkit.Location;
+import org.bukkit.entity.Display;
 import org.bukkit.entity.FishHook;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -12,7 +15,9 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -20,12 +25,14 @@ import java.util.UUID;
  *
  * MMOCore remains responsible for tugs, its 1-second inter-click timeout,
  * rewards, EXP and fishing stats. MDVTools only starts one independent clock
- * on BITE and removes the hook when the configured total time is exhausted.
+ * on BITE. When time expires it asks MMOCore to close its own FishingData
+ * session, preventing stale listeners / multiple bobbers.
  */
 public final class FishingFightTimerListener implements Listener {
     private final JavaPlugin plugin;
     private final MMOCoreFishingBridge mmocoreBridge;
     private final Map<UUID, ActiveFight> activeFights = new HashMap<>();
+    private final Set<TextDisplay> activeHolograms = new HashSet<>();
 
     private FishingFightTimerSettings settings;
 
@@ -41,11 +48,13 @@ public final class FishingFightTimerListener implements Listener {
         this.settings = FishingFightTimerSettings.from(plugin.getConfig());
         this.mmocoreBridge.reload(settings.mmocorePluginName());
         clearAll();
+        clearHolograms();
         announceSettings();
     }
 
     public void shutdown() {
         clearAll();
+        clearHolograms();
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -101,26 +110,37 @@ public final class FishingFightTimerListener implements Listener {
                 return;
             }
 
+            // Snapshot BEFORE MMOCore closes/removes the bobber so the hologram
+            // appears exactly where the failed catch was fighting.
+            Location escapeLocation = hook.getLocation().clone();
             activeFights.remove(playerId);
-            hook.remove();
-            debug("Tiempo total agotado para " + player.getName() + "; captura cancelada.");
-            playEscapeFeedback(player);
+
+            boolean mmocoreClosed = mmocoreBridge.closeActiveFishing(player, hook);
+            if (!mmocoreClosed && hook.isValid() && !hook.isDead()) {
+                // Compatibility fallback only. Current MMOCore should always be
+                // closed through FishingData.close() to fully clear its state.
+                hook.remove();
+                debug("No se encontró FishingData; se usó hook.remove() como fallback.");
+            }
+
+            debug("Tiempo total agotado para " + player.getName()
+                    + "; captura cancelada. mmocore-close=" + mmocoreClosed + ".");
+            playEscapeFeedback(player, escapeLocation);
         }, delay);
 
         activeFights.put(playerId, new ActiveFight(hookId, hook, task));
     }
 
-    private void playEscapeFeedback(Player player) {
-        if (!player.isOnline()) return;
-
-        if (settings.sendEscapeMessage() && settings.escapeMessage() != null && !settings.escapeMessage().isBlank()) {
-            player.sendMessage(color(settings.escapeMessage()));
+    private void playEscapeFeedback(Player player, Location hookLocation) {
+        if (settings.hologramEnabled() && settings.hologramText() != null && !settings.hologramText().isBlank()) {
+            spawnEscapeHologram(hookLocation);
         }
 
-        if (settings.escapeSoundEnabled() && settings.escapeSound() != null && !settings.escapeSound().isBlank()) {
+        if (player.isOnline() && settings.escapeSoundEnabled()
+                && settings.escapeSound() != null && !settings.escapeSound().isBlank()) {
             try {
                 player.playSound(
-                        player.getLocation(),
+                        hookLocation,
                         settings.escapeSound(),
                         settings.escapeSoundVolume(),
                         settings.escapeSoundPitch()
@@ -129,6 +149,27 @@ public final class FishingFightTimerListener implements Listener {
                 debug("Sonido inválido: " + settings.escapeSound());
             }
         }
+    }
+
+    private void spawnEscapeHologram(Location hookLocation) {
+        if (hookLocation.getWorld() == null) return;
+
+        Location hologramLocation = hookLocation.clone().add(0.0D, settings.hologramYOffset(), 0.0D);
+        TextDisplay hologram = hookLocation.getWorld().spawn(hologramLocation, TextDisplay.class, display -> {
+            display.setText(color(settings.hologramText()));
+            display.setBillboard(Display.Billboard.CENTER);
+            display.setShadowed(settings.hologramShadowed());
+            display.setSeeThrough(settings.hologramSeeThrough());
+            display.setDefaultBackground(false);
+            display.setAlignment(TextDisplay.TextAlignment.CENTER);
+            display.setPersistent(false);
+        });
+
+        activeHolograms.add(hologram);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            activeHolograms.remove(hologram);
+            if (hologram.isValid() && !hologram.isDead()) hologram.remove();
+        }, settings.hologramDurationTicks());
     }
 
     private void cancelFight(UUID playerId) {
@@ -143,6 +184,13 @@ public final class FishingFightTimerListener implements Listener {
         activeFights.clear();
     }
 
+    private void clearHolograms() {
+        for (TextDisplay hologram : activeHolograms) {
+            if (hologram != null && hologram.isValid() && !hologram.isDead()) hologram.remove();
+        }
+        activeHolograms.clear();
+    }
+
     private void announceSettings() {
         if (!settings.enabled()) {
             plugin.getLogger().info("[FishingFightTimer] Desactivado por config.");
@@ -150,7 +198,8 @@ public final class FishingFightTimerListener implements Listener {
         }
 
         plugin.getLogger().info("[FishingFightTimer] Activado: límite total="
-                + settings.maxFightTimeSeconds() + "s, only-mmocore=" + settings.onlyMmocoreCustomFishing() + ".");
+                + settings.maxFightTimeSeconds() + "s, only-mmocore=" + settings.onlyMmocoreCustomFishing()
+                + ", holograma=" + settings.hologramEnabled() + ".");
 
         if (settings.onlyMmocoreCustomFishing()) {
             // Resolve immediately so an incompatible MMOCore build is visible at startup,

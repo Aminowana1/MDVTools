@@ -1,4 +1,4 @@
-# MDVTools 1.0.25
+# MDVTools 1.0.26
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -612,9 +612,15 @@ fishing-fight-timer:
   # Actívalo temporalmente si querés ver en consola cuándo inicia/vence el timer.
   debug: false
 
-  messages:
+  # Holograma temporal que aparece sobre la posición del anzuelo cuando
+  # se agota el tiempo. Se usa TextDisplay vanilla, sin dependencias extra.
+  hologram:
     enabled: true
-    escaped: "&c¡El pez escapó! &7No lograste recogerlo a tiempo."
+    text: "&c¡El pez escapó! &7No lograste recogerlo a tiempo."
+    duration-seconds: 2.0
+    y-offset: 0.85
+    shadowed: true
+    see-through: true
 
   sound:
     enabled: true

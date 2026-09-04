@@ -9,8 +9,12 @@ public record FishingFightTimerSettings(
         boolean onlyMmocoreCustomFishing,
         String mmocorePluginName,
         boolean debug,
-        boolean sendEscapeMessage,
-        String escapeMessage,
+        boolean hologramEnabled,
+        String hologramText,
+        double hologramDurationSeconds,
+        double hologramYOffset,
+        boolean hologramShadowed,
+        boolean hologramSeeThrough,
         boolean escapeSoundEnabled,
         String escapeSound,
         float escapeSoundVolume,
@@ -23,8 +27,12 @@ public record FishingFightTimerSettings(
                 config.getBoolean("fishing-fight-timer.only-mmocore-custom-fishing", true),
                 config.getString("fishing-fight-timer.mmocore-plugin-name", "MMOCore"),
                 config.getBoolean("fishing-fight-timer.debug", false),
-                config.getBoolean("fishing-fight-timer.messages.enabled", true),
-                config.getString("fishing-fight-timer.messages.escaped", "&c¡El pez escapó! &7No lograste recogerlo a tiempo."),
+                config.getBoolean("fishing-fight-timer.hologram.enabled", true),
+                config.getString("fishing-fight-timer.hologram.text", "&c¡El pez escapó! &7No lograste recogerlo a tiempo."),
+                Math.max(0.1D, config.getDouble("fishing-fight-timer.hologram.duration-seconds", 2.0D)),
+                config.getDouble("fishing-fight-timer.hologram.y-offset", 0.85D),
+                config.getBoolean("fishing-fight-timer.hologram.shadowed", true),
+                config.getBoolean("fishing-fight-timer.hologram.see-through", true),
                 config.getBoolean("fishing-fight-timer.sound.enabled", true),
                 config.getString("fishing-fight-timer.sound.value", "entity.fishing_bobber.retrieve"),
                 (float) config.getDouble("fishing-fight-timer.sound.volume", 0.8D),
@@ -34,5 +42,9 @@ public record FishingFightTimerSettings(
 
     public long maxFightTicks() {
         return Math.max(1L, Math.round(maxFightTimeSeconds * 20.0D));
+    }
+
+    public long hologramDurationTicks() {
+        return Math.max(1L, Math.round(hologramDurationSeconds * 20.0D));
     }
 }

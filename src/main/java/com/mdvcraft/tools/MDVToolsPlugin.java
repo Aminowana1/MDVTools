@@ -337,6 +337,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        mergeMissingConfigDefaults();
         ensureCustomDropsFile();
         loadSettings();
         fishingFightTimerListener = new FishingFightTimerListener(this);
@@ -398,6 +399,18 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
                     + throwable.getClass().getSimpleName()
                     + (throwable.getMessage() == null ? "" : " - " + throwable.getMessage()));
         }
+    }
+
+    /**
+     * Adds only missing keys from the config.yml bundled in the jar.
+     * Existing server values are preserved. This lets new MDVTools versions
+     * self-update config.yml without forcing the administrator to replace it.
+     */
+    private void mergeMissingConfigDefaults() {
+        reloadConfig();
+        getConfig().options().copyDefaults(true);
+        saveConfig();
+        reloadConfig();
     }
 
     private void loadSettings() {
@@ -4707,6 +4720,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
 
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
+            mergeMissingConfigDefaults();
             loadSettings();
             if (fishingFightTimerListener != null) fishingFightTimerListener.reload();
             registerWeaponSwapLockExternalEvents();

@@ -1,4 +1,4 @@
-# MDVTools 1.0.24
+# MDVTools 1.0.25
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -608,6 +608,9 @@ fishing-fight-timer:
   # válida para ese jugador. Recomendado para no tocar pesca vanilla ajena.
   only-mmocore-custom-fishing: true
   mmocore-plugin-name: "MMOCore"
+
+  # Actívalo temporalmente si querés ver en consola cuándo inicia/vence el timer.
+  debug: false
 
   messages:
     enabled: true

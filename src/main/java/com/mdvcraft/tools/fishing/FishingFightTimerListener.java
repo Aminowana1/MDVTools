@@ -18,11 +18,9 @@ import java.util.UUID;
 /**
  * Adds a TOTAL time limit to MMOCore's tug minigame.
  *
- * MMOCore keeps full ownership of its own mechanics: tugs, the ~1 second
- * timeout between pulls, rewards, experience, critical fishing and rod logic.
- * This listener only starts a second clock when the fish BITES. If the hook is
- * still active when that clock expires, the hook is removed and the catch is
- * lost.
+ * MMOCore remains responsible for tugs, its 1-second inter-click timeout,
+ * rewards, EXP and fishing stats. MDVTools only starts one independent clock
+ * on BITE and removes the hook when the configured total time is exhausted.
  */
 public final class FishingFightTimerListener implements Listener {
     private final JavaPlugin plugin;
@@ -36,14 +34,14 @@ public final class FishingFightTimerListener implements Listener {
         this.mmocoreBridge = new MMOCoreFishingBridge(plugin);
         this.settings = FishingFightTimerSettings.from(plugin.getConfig());
         this.mmocoreBridge.reload(settings.mmocorePluginName());
+        announceSettings();
     }
 
     public void reload() {
         this.settings = FishingFightTimerSettings.from(plugin.getConfig());
         this.mmocoreBridge.reload(settings.mmocorePluginName());
-
-        // A reload must never leave old timers running with stale values.
         clearAll();
+        announceSettings();
     }
 
     public void shutdown() {
@@ -58,19 +56,22 @@ public final class FishingFightTimerListener implements Listener {
         UUID playerId = player.getUniqueId();
 
         if (event.getState() == PlayerFishEvent.State.BITE) {
-            if (settings.onlyMmocoreCustomFishing() && !mmocoreBridge.hasCustomFishingTable(player)) {
+            FishHook hook = event.getHook();
+
+            if (settings.onlyMmocoreCustomFishing() && !mmocoreBridge.hasCustomFishingTable(player, hook)) {
+                debug("BITE ignorado para " + player.getName() + ": MMOCore no devolvió tabla custom.");
                 return;
             }
 
-            startFight(player, event.getHook());
+            startFight(player, hook);
             return;
         }
 
-        // MMOCore reuses CAUGHT_FISH / FAILED_ATTEMPT / REEL_IN as tug clicks.
-        // Never reset the total timer on those clicks. We only clean up when
-        // MMOCore has already removed the hook after success/failure.
+        // MMOCore uses CAUGHT_FISH / FAILED_ATTEMPT / REEL_IN as tug pulls.
+        // These events MUST NOT restart the total timer.
         ActiveFight fight = activeFights.get(playerId);
         if (fight != null && (!fight.hook().isValid() || fight.hook().isDead())) {
+            debug("Timer limpiado para " + player.getName() + ": MMOCore cerró la captura antes del límite.");
             cancelFight(playerId);
         }
     }
@@ -87,18 +88,22 @@ public final class FishingFightTimerListener implements Listener {
         UUID hookId = hook.getUniqueId();
         long delay = settings.maxFightTicks();
 
+        debug("Timer iniciado para " + player.getName() + ": "
+                + settings.maxFightTimeSeconds() + "s (" + delay + " ticks), hook=" + hookId + ".");
+
         BukkitTask task = plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             ActiveFight fight = activeFights.get(playerId);
             if (fight == null || !fight.hookId().equals(hookId)) return;
 
-            // If MMOCore already completed/closed the catch, this timer is stale.
             if (!hook.isValid() || hook.isDead()) {
                 activeFights.remove(playerId);
+                debug("Timer venció pero el hook de " + player.getName() + " ya estaba cerrado.");
                 return;
             }
 
             activeFights.remove(playerId);
             hook.remove();
+            debug("Tiempo total agotado para " + player.getName() + "; captura cancelada.");
             playEscapeFeedback(player);
         }, delay);
 
@@ -121,16 +126,14 @@ public final class FishingFightTimerListener implements Listener {
                         settings.escapeSoundPitch()
                 );
             } catch (IllegalArgumentException ignored) {
-                // Invalid sound names must never break the fishing flow.
+                debug("Sonido inválido: " + settings.escapeSound());
             }
         }
     }
 
     private void cancelFight(UUID playerId) {
         ActiveFight previous = activeFights.remove(playerId);
-        if (previous != null && previous.task() != null) {
-            previous.task().cancel();
-        }
+        if (previous != null && previous.task() != null) previous.task().cancel();
     }
 
     private void clearAll() {
@@ -138,6 +141,26 @@ public final class FishingFightTimerListener implements Listener {
             if (fight.task() != null) fight.task().cancel();
         }
         activeFights.clear();
+    }
+
+    private void announceSettings() {
+        if (!settings.enabled()) {
+            plugin.getLogger().info("[FishingFightTimer] Desactivado por config.");
+            return;
+        }
+
+        plugin.getLogger().info("[FishingFightTimer] Activado: límite total="
+                + settings.maxFightTimeSeconds() + "s, only-mmocore=" + settings.onlyMmocoreCustomFishing() + ".");
+
+        if (settings.onlyMmocoreCustomFishing()) {
+            // Resolve immediately so an incompatible MMOCore build is visible at startup,
+            // rather than discovering it only when a player fishes.
+            mmocoreBridge.isAvailable();
+        }
+    }
+
+    private void debug(String message) {
+        if (settings.debug()) plugin.getLogger().info("[FishingFightTimer][DEBUG] " + message);
     }
 
     @SuppressWarnings("deprecation")

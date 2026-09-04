@@ -2,14 +2,13 @@ package com.mdvcraft.tools.fishing;
 
 import org.bukkit.configuration.file.FileConfiguration;
 
-/**
- * Immutable configuration snapshot for the custom MMOCore fishing fight timer.
- */
+/** Immutable configuration snapshot for the MMOCore fishing fight timer. */
 public record FishingFightTimerSettings(
         boolean enabled,
         double maxFightTimeSeconds,
         boolean onlyMmocoreCustomFishing,
         String mmocorePluginName,
+        boolean debug,
         boolean sendEscapeMessage,
         String escapeMessage,
         boolean escapeSoundEnabled,
@@ -23,6 +22,7 @@ public record FishingFightTimerSettings(
                 Math.max(0.1D, config.getDouble("fishing-fight-timer.max-fight-time-seconds", 3.0D)),
                 config.getBoolean("fishing-fight-timer.only-mmocore-custom-fishing", true),
                 config.getString("fishing-fight-timer.mmocore-plugin-name", "MMOCore"),
+                config.getBoolean("fishing-fight-timer.debug", false),
                 config.getBoolean("fishing-fight-timer.messages.enabled", true),
                 config.getString("fishing-fight-timer.messages.escaped", "&c¡El pez escapó! &7No lograste recogerlo a tiempo."),
                 config.getBoolean("fishing-fight-timer.sound.enabled", true),

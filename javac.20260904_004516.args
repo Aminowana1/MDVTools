@@ -1,0 +1,12 @@
+--release
+21
+-proc:none
+-Xmaxerrs
+1000
+-d
+/tmp/mdvtools-syntax-check
+src/main/java/com/mdvcraft/tools/MDVToolsPlaceholderExpansion.java
+src/main/java/com/mdvcraft/tools/fishing/FishingFightTimerListener.java
+src/main/java/com/mdvcraft/tools/fishing/FishingFightTimerSettings.java
+src/main/java/com/mdvcraft/tools/fishing/MMOCoreFishingBridge.java
+src/main/java/com/mdvcraft/tools/MDVToolsPlugin.java

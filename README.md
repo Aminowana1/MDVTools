@@ -306,3 +306,15 @@ active una ráfaga, un abanico horizontal o un volley. El sistema solo se ejecut
 corto y pickup bloqueado a las copias.
 
 Consulta `src/main/resources/amulets.yml` para ejemplos completos.
+
+## 1.0.27 - Drops custom de pesca MMOCore
+
+MDVTools registra mediante `MMOLoader` dos nuevos tipos que pueden usarse directamente en `on-fish`:
+
+```yml
+- 'enchantedbook{enchant=protection;level=4;tugs=16-20;experience=5-7} 1 1 4'
+- 'fishmob{type=DROWNED;tugs=12-16;experience=4-6} 1 1 20'
+- 'fishmob{mythic=TU_MOB_MYTHIC;level=1;tugs=20-26;experience=8-12} 1 1 5'
+```
+
+`enchantedbook` crea un libro encantado vanilla real. `fishmob` no entrega un item: tras completar la captura invoca el mob en la ubicación actual del pescador. El segundo argumento de cantidad (`1`, `1-2`, etc.) se usa como cantidad de mobs.

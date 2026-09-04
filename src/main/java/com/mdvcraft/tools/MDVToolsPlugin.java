@@ -84,6 +84,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     private boolean debug;
     private FishingFightTimerListener fishingFightTimerListener;
+    private Object mmocoreFishingDropExtension;
 
     private Set<Material> miningAllowed = EnumSet.noneOf(Material.class);
     private Set<Material> logsAllowed = EnumSet.noneOf(Material.class);
@@ -335,11 +336,17 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
 
     @Override
+    public void onLoad() {
+        registerMMOCoreFishingDropExtensionOnLoad();
+    }
+
+    @Override
     public void onEnable() {
         saveDefaultConfig();
         mergeMissingConfigDefaults();
         ensureCustomDropsFile();
         loadSettings();
+        enableMMOCoreFishingDropExtensionRuntime();
         fishingFightTimerListener = new FishingFightTimerListener(this);
         Bukkit.getPluginManager().registerEvents(fishingFightTimerListener, this);
         Bukkit.getPluginManager().registerEvents(this, this);
@@ -355,6 +362,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        disableMMOCoreFishingDropExtensionRuntime();
         if (fishingFightTimerListener != null) fishingFightTimerListener.shutdown();
         weaponSwapLockUntil.clear();
         weaponSwapLockLastBlockedMessage.clear();
@@ -376,6 +384,47 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         tpaWarmups.clear();
         tpaInvulnerableUntil.clear();
         getLogger().info("MDVTools desactivado.");
+    }
+
+
+    /**
+     * Registers optional MMOCore API extensions during Bukkit's load phase.
+     * Reflection keeps MDVTools able to load even on installations without MMOCore.
+     */
+    private void registerMMOCoreFishingDropExtensionOnLoad() {
+        Plugin mmocore = Bukkit.getPluginManager().getPlugin("MMOCore");
+        if (mmocore == null) return;
+
+        try {
+            Class<?> type = Class.forName("com.mdvcraft.tools.fishing.mmocore.MMOCoreFishingDropExtension");
+            Object extension = type.getConstructor(JavaPlugin.class).newInstance(this);
+            type.getMethod("registerLoader").invoke(extension);
+            mmocoreFishingDropExtension = extension;
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            getLogger().warning("[FishingDrops] No se pudo registrar la extensión MMOCore: "
+                    + exception.getClass().getSimpleName()
+                    + (exception.getMessage() == null ? "" : " - " + exception.getMessage()));
+        }
+    }
+
+    private void enableMMOCoreFishingDropExtensionRuntime() {
+        if (mmocoreFishingDropExtension == null) return;
+        try {
+            mmocoreFishingDropExtension.getClass().getMethod("enableRuntime").invoke(mmocoreFishingDropExtension);
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            getLogger().warning("[FishingDrops] No se pudo activar el listener runtime de MMOCore: "
+                    + exception.getClass().getSimpleName()
+                    + (exception.getMessage() == null ? "" : " - " + exception.getMessage()));
+        }
+    }
+
+    private void disableMMOCoreFishingDropExtensionRuntime() {
+        if (mmocoreFishingDropExtension == null) return;
+        try {
+            mmocoreFishingDropExtension.getClass().getMethod("disableRuntime").invoke(mmocoreFishingDropExtension);
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            // Bukkit also unregisters this plugin's listeners on disable.
+        }
     }
 
     private void registerPlaceholderExpansion() {

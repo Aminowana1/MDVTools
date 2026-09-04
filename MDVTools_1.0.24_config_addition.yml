@@ -1,0 +1,22 @@
+# ==========================================================
+# MDVTools 1.0.24 - AÑADIR AL FINAL DE TU config.yml ACTUAL
+# No hace falta borrar ni regenerar el resto de la configuración.
+# ==========================================================
+
+# Límite TOTAL del minijuego de pesca custom de MMOCore.
+# El timeout normal de MMOCore entre clicks NO se modifica.
+fishing-fight-timer:
+  enabled: true
+  max-fight-time-seconds: 3.0
+  only-mmocore-custom-fishing: true
+  mmocore-plugin-name: "MMOCore"
+
+  messages:
+    enabled: true
+    escaped: "&c¡El pez escapó! &7No lograste recogerlo a tiempo."
+
+  sound:
+    enabled: true
+    value: "entity.fishing_bobber.retrieve"
+    volume: 0.8
+    pitch: 0.7

@@ -1,0 +1,9 @@
+-XDshould-stop.at=PARSE
+-proc:none
+-d
+/mnt/data/parseout
+src/main/java/com/mdvcraft/tools/MDVToolsPlaceholderExpansion.java
+src/main/java/com/mdvcraft/tools/fishing/FishingFightTimerListener.java
+src/main/java/com/mdvcraft/tools/fishing/FishingFightTimerSettings.java
+src/main/java/com/mdvcraft/tools/fishing/MMOCoreFishingBridge.java
+src/main/java/com/mdvcraft/tools/MDVToolsPlugin.java

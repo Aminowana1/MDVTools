@@ -1,5 +1,6 @@
 package com.mdvcraft.tools;
 
+import com.mdvcraft.tools.fishing.FishingFightTimerListener;
 import io.papermc.paper.datacomponent.DataComponentTypes;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -82,6 +83,7 @@ import net.kyori.adventure.text.format.TextDecoration;
 public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     private boolean debug;
+    private FishingFightTimerListener fishingFightTimerListener;
 
     private Set<Material> miningAllowed = EnumSet.noneOf(Material.class);
     private Set<Material> logsAllowed = EnumSet.noneOf(Material.class);
@@ -337,6 +339,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         saveDefaultConfig();
         ensureCustomDropsFile();
         loadSettings();
+        fishingFightTimerListener = new FishingFightTimerListener(this);
+        Bukkit.getPluginManager().registerEvents(fishingFightTimerListener, this);
         Bukkit.getPluginManager().registerEvents(this, this);
         registerWeaponSwapLockExternalEvents();
         registerCustomDurabilityProtectionEvent();
@@ -350,6 +354,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        if (fishingFightTimerListener != null) fishingFightTimerListener.shutdown();
         weaponSwapLockUntil.clear();
         weaponSwapLockLastBlockedMessage.clear();
         weaponSwapLastWeaponBeforeNonWeapon.clear();
@@ -4703,6 +4708,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             loadSettings();
+            if (fishingFightTimerListener != null) fishingFightTimerListener.reload();
             registerWeaponSwapLockExternalEvents();
             registerCustomDurabilityProtectionEvent();
             registerPlayerHeadDurabilityBarExternalEvents();

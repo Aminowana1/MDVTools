@@ -1,0 +1,14 @@
+MDVTools 1.0.24
+================
+
+NUEVO - Fishing Fight Timer para MMOCore
+- Añade un límite TOTAL configurable al minijuego de tugs.
+- El reloj comienza en PlayerFishEvent.State.BITE.
+- No modifica el timeout nativo de MMOCore entre tirones.
+- Si vence el tiempo total y el anzuelo sigue activo, MDVTools lo elimina y la captura se pierde.
+- Integración aislada en com.mdvcraft.tools.fishing.
+- No requiere dependencia Maven de MMOCore: usa un bridge de reflexión solo para comprobar que exista una tabla custom activa.
+- /mdvtools reload recarga los valores y cancela temporizadores antiguos.
+
+CONFIG
+Copiar MDVTools_1.0.24_config_addition.yml al final del config.yml existente.

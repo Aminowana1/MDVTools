@@ -1,4 +1,4 @@
-# MDVTools 1.0.23
+# MDVTools 1.0.24
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -589,6 +589,35 @@ identification:
       value: "block.note_block.bass"
       volume: 0.6
       pitch: 0.7
+
+
+# ==========================================================
+# Límite TOTAL del minijuego de pesca custom de MMOCore
+# ==========================================================
+# MMOCore conserva su timeout normal entre tirones/clicks.
+# MDVTools añade un segundo límite independiente: desde que el pez pica
+# (State.BITE), el jugador dispone de este tiempo TOTAL para completar
+# todos los tugs. Si no lo logra, el anzuelo desaparece y pierde la captura.
+fishing-fight-timer:
+  enabled: true
+
+  # Tiempo total disponible desde que empieza la resistencia del pez.
+  max-fight-time-seconds: 3.0
+
+  # true = solo se activa cuando MMOCore tiene una tabla de pesca custom
+  # válida para ese jugador. Recomendado para no tocar pesca vanilla ajena.
+  only-mmocore-custom-fishing: true
+  mmocore-plugin-name: "MMOCore"
+
+  messages:
+    enabled: true
+    escaped: "&c¡El pez escapó! &7No lograste recogerlo a tiempo."
+
+  sound:
+    enabled: true
+    value: "entity.fishing_bobber.retrieve"
+    volume: 0.8
+    pitch: 0.7
 
 # ==========================================================
 # TPA simple de MDVTools

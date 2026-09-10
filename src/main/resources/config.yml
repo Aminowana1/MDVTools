@@ -1,4 +1,4 @@
-# MDVTools 1.0.27
+# MDVTools 1.0.28
 # Plugin de herramientas de profesión para MDVCRAFT.
 #
 # El plugin lee líneas del lore del item:
@@ -177,15 +177,16 @@ farming:
 # Las tres líneas también pueden modificar de forma RELATIVA los drops clasificados
 # en custom-drops.yml como FARMING, MINING o WOODCUTTING.
 # Ejemplo: chance base 0.25%, bonus +8% => 0.25 * 1.08 = 0.27%.
-# Además, Minerales Raros / Nodos de arbol extra conservan su función ABSOLUTA:
-# chance de dropear +1 item extra al romper vetas/nodos custom de MDVHeadOres.
+# Minerales Raros / Nodos de arbol extra también usan rendimiento acumulativo en MDVHeadOres:
+# cada 100% garantiza +1 unidad y el resto queda como probabilidad adicional.
 equipment-bonuses:
   enabled: true
 
   # Tope de armadura + herramienta, por cada profesión.
-  max-total-bonus-percent: 100.0
+  # 10000% permite progresión acumulativa amplia sin riesgo de valores absurdos.
+  max-total-bonus-percent: 10000.0
   # Tope final de armadura + herramienta + nivel de profesión.
-  max-combined-bonus-percent: 100.0
+  max-combined-bonus-percent: 10000.0
 
   main-hand-tools:
     enabled: true
@@ -218,8 +219,9 @@ equipment-bonuses:
 #
 # Se suman a los bonus de armadura y herramienta:
 # - Las tres profesiones aumentan de forma RELATIVA los custom drops de su categoría.
-# - Minería conserva además la probabilidad ABSOLUTA de +1 mineral de MDVHeadOres.
-# - Leñador conserva además la probabilidad ABSOLUTA de +1 drop de nodo MDVHeadOres.
+# - Minería usa además rendimiento acumulativo en vetas MDVHeadOres y menas vanilla.
+# - Leñador usa además rendimiento acumulativo en nodos MDVHeadOres y troncos vanilla.
+# - Agricultura usa rendimiento acumulativo en cultivos vanilla, mientras sus drops raros siguen relativos.
 profession-bonuses:
   enabled: true
   mmocore-plugin-name: "MMOCore"
@@ -229,7 +231,7 @@ profession-bonuses:
 
   # true: nivel 1 ya entrega un incremento. false: empieza a sumar desde nivel 2.
   count-starting-level: true
-  max-profession-bonus-percent: 100.0
+  max-profession-bonus-percent: 10000.0
 
   mining:
     profession-id: "mining"
@@ -254,6 +256,79 @@ profession-bonuses:
   # Cambia mining por farming o woodcutting. También existen alias españoles:
   # minero, agricultor y lenador.
   # Agrega _formatted al final para obtener, por ejemplo, +12.5%.
+
+
+# ==========================================================
+# RENDIMIENTO ACUMULATIVO DE PROFESIONES
+#
+# Convierte el bonus total en drops extra sin loops por porcentaje:
+#  80%  = 80% de +1
+# 170%  = +1 seguro y 70% de +1 adicional
+# 550%  = +5 seguros y 50% de +1 adicional
+#
+# Este sistema NO reemplaza los custom-drops raros. Sus chances siguen
+# aumentando de forma RELATIVA mediante custom-drops.relative-bonuses.
+# Fortune/Suerte tampoco multiplica estos extras: cada 100% agrega exactamente
+# una unidad base del recurso configurado.
+# ==========================================================
+yield-bonuses:
+  system-version: 2
+  enabled: true
+
+  # Tope de seguridad de unidades extra generadas por un solo bloque.
+  # No afecta el cálculo normal; 550% solo genera 5 o 6.
+  max-extra-units-per-block: 128
+
+  # Si el pico tiene Silk Touch, los porcentajes de MINERÍA no se aplican:
+  # - no hay extras de menas vanilla
+  # - no hay extras de vetas MDVHeadOres
+  # - los custom-drops MINING conservan su chance base, pero sin multiplicador de bonus
+  mining-disable-with-silk-touch: true
+
+  vanilla:
+    mining:
+      enabled: true
+      # Evita generar recursos si se intenta romper una mena sin un pico.
+      require-matching-tool: true
+      # Cada +1 del rendimiento entrega UNA unidad de este recurso, independiente de Fortune.
+      resources:
+        COAL_ORE: COAL
+        DEEPSLATE_COAL_ORE: COAL
+        IRON_ORE: RAW_IRON
+        DEEPSLATE_IRON_ORE: RAW_IRON
+        COPPER_ORE: RAW_COPPER
+        DEEPSLATE_COPPER_ORE: RAW_COPPER
+        GOLD_ORE: RAW_GOLD
+        DEEPSLATE_GOLD_ORE: RAW_GOLD
+        REDSTONE_ORE: REDSTONE
+        DEEPSLATE_REDSTONE_ORE: REDSTONE
+        LAPIS_ORE: LAPIS_LAZULI
+        DEEPSLATE_LAPIS_ORE: LAPIS_LAZULI
+        DIAMOND_ORE: DIAMOND
+        DEEPSLATE_DIAMOND_ORE: DIAMOND
+        EMERALD_ORE: EMERALD
+        DEEPSLATE_EMERALD_ORE: EMERALD
+        NETHER_QUARTZ_ORE: QUARTZ
+        NETHER_GOLD_ORE: GOLD_NUGGET
+        ANCIENT_DEBRIS: ANCIENT_DEBRIS
+
+    woodcutting:
+      enabled: true
+      # Usa los bloques de woodcutting.allowed-blocks y entrega el mismo tronco roto.
+      require-matching-tool: true
+
+    farming:
+      enabled: true
+      # false permite cosechar normalmente a mano y seguir usando profesión/armadura.
+      # El bonus del lore de la herramienta solo suma si llevas una azada, como antes.
+      require-matching-tool: false
+      # Solo se aplica a cultivos maduros. Cada +1 entrega el producto principal.
+      resources:
+        WHEAT: WHEAT
+        CARROTS: CARROT
+        POTATOES: POTATO
+        BEETROOTS: BEETROOT
+        NETHER_WART: NETHER_WART
 
 
 # Comportamiento global de custom-drops.yml.

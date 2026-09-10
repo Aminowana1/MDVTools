@@ -1,5 +1,5 @@
 name: MDVTools
-version: 1.0.27
+version: 1.0.28
 main: com.mdvcraft.tools.MDVToolsPlugin
 api-version: '1.21'
 author: MDVCRAFT

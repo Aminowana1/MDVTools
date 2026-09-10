@@ -136,6 +136,21 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private double maxEquipmentBonusPercent;
     private double maxCombinedBonusPercent;
     private int headOreExtraAmount;
+
+    // Rendimiento de profesiones: cada 100% garantiza +1 unidad y el resto
+    // se resuelve con un único roll porcentual. Los custom-drops raros siguen
+    // usando su multiplicador relativo independiente.
+    private boolean vanillaYieldEnabled;
+    private boolean vanillaMiningYieldEnabled;
+    private boolean vanillaWoodcuttingYieldEnabled;
+    private boolean vanillaFarmingYieldEnabled;
+    private boolean vanillaMiningRequireMatchingTool;
+    private boolean vanillaWoodcuttingRequireMatchingTool;
+    private boolean vanillaFarmingRequireMatchingTool;
+    private boolean miningYieldDisabledBySilkTouch;
+    private int maxYieldExtraUnitsPerBlock;
+    private final Map<Material, Material> vanillaMiningYieldDrops = new EnumMap<>(Material.class);
+    private final Map<Material, Material> vanillaFarmingYieldDrops = new EnumMap<>(Material.class);
     private int treeNodeExtraAmount;
     private Pattern agricultureRareBonusPattern;
     private Pattern rareMineralsBonusPattern;
@@ -343,6 +358,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        migrateLegacyYieldBonusCaps();
         mergeMissingConfigDefaults();
         ensureCustomDropsFile();
         loadSettings();
@@ -462,6 +478,41 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         reloadConfig();
     }
 
+    /**
+     * Migra únicamente los topes por defecto antiguos de 100% para que una instalación
+     * existente pueda aprovechar el nuevo sistema acumulativo sin editar config.yml a mano.
+     * Valores personalizados distintos de 100% se respetan.
+     */
+    private void migrateLegacyYieldBonusCaps() {
+        File configFile = new File(getDataFolder(), "config.yml");
+        if (!configFile.isFile()) return;
+
+        try {
+            YamlConfiguration disk = YamlConfiguration.loadConfiguration(configFile);
+            if (disk.contains("yield-bonuses.system-version")) return;
+
+            boolean changed = false;
+            changed |= migrateLegacyDefaultCap(disk, "equipment-bonuses.max-total-bonus-percent");
+            changed |= migrateLegacyDefaultCap(disk, "equipment-bonuses.max-combined-bonus-percent");
+            changed |= migrateLegacyDefaultCap(disk, "profession-bonuses.max-profession-bonus-percent");
+
+            if (changed) {
+                disk.save(configFile);
+                getLogger().info("Topes antiguos de bonus (100%) migrados a 10000% para el sistema de rendimiento acumulativo.");
+            }
+        } catch (Exception exception) {
+            getLogger().warning("No se pudieron migrar los topes antiguos de bonus: " + exception.getMessage());
+        }
+    }
+
+    private boolean migrateLegacyDefaultCap(YamlConfiguration config, String path) {
+        if (config == null || path == null || !config.contains(path)) return false;
+        double value = config.getDouble(path, 100.0);
+        if (Math.abs(value - 100.0) > 0.000001) return false;
+        config.set(path, 10000.0);
+        return true;
+    }
+
     private void loadSettings() {
         reloadConfig();
         loadAmuletsConfiguration();
@@ -542,6 +593,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         loadEquipmentBonusSettings();
         loadProfessionBonusSettings();
+        loadVanillaYieldSettings();
         loadIdentificationSettings();
         loadCrossbowAutoReloadSettings();
         loadWeaponSwapLockSettings();
@@ -564,8 +616,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         treeNodeExtraBonusEnabled = getConfig().getBoolean("equipment-bonuses.tree-node-extra.enabled", true);
         mainHandToolBonusesEnabled = getConfig().getBoolean("equipment-bonuses.main-hand-tools.enabled", true);
         mainHandToolRequireMatchingType = getConfig().getBoolean("equipment-bonuses.main-hand-tools.require-matching-tool-type", true);
-        maxEquipmentBonusPercent = Math.max(0.0, getConfig().getDouble("equipment-bonuses.max-total-bonus-percent", 100.0));
-        maxCombinedBonusPercent = Math.max(0.0, getConfig().getDouble("equipment-bonuses.max-combined-bonus-percent", 100.0));
+        maxEquipmentBonusPercent = Math.max(0.0, getConfig().getDouble("equipment-bonuses.max-total-bonus-percent", 10000.0));
+        maxCombinedBonusPercent = Math.max(0.0, getConfig().getDouble("equipment-bonuses.max-combined-bonus-percent", 10000.0));
         headOreExtraAmount = Math.max(1, getConfig().getInt("equipment-bonuses.rare-minerals.extra-amount", 1));
         treeNodeExtraAmount = Math.max(1, getConfig().getInt("equipment-bonuses.tree-node-extra.extra-amount", 1));
 
@@ -595,7 +647,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         professionBonusesEnabled = getConfig().getBoolean("profession-bonuses.enabled", true);
         mmocorePluginName = getConfig().getString("profession-bonuses.mmocore-plugin-name", "MMOCore");
         professionBonusCacheMs = Math.max(0L, getConfig().getLong("profession-bonuses.cache-ms", 1000L));
-        professionBonusMaxPercent = Math.max(0.0, getConfig().getDouble("profession-bonuses.max-profession-bonus-percent", 100.0));
+        professionBonusMaxPercent = Math.max(0.0, getConfig().getDouble("profession-bonuses.max-profession-bonus-percent", 10000.0));
         professionBonusCountStartingLevel = getConfig().getBoolean("profession-bonuses.count-starting-level", true);
 
         miningProfessionId = normalizeProfessionId(getConfig().getString("profession-bonuses.mining.profession-id", "mining"));
@@ -614,6 +666,41 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         mmocorePlayerDataGetLookupType = null;
         mmocoreGetCollectionSkillsMethod = null;
         mmocoreGetProfessionLevelMethod = null;
+    }
+
+    private void loadVanillaYieldSettings() {
+        vanillaYieldEnabled = getConfig().getBoolean("yield-bonuses.enabled", true);
+        miningYieldDisabledBySilkTouch = getConfig().getBoolean("yield-bonuses.mining-disable-with-silk-touch", true);
+        maxYieldExtraUnitsPerBlock = Math.max(1, getConfig().getInt("yield-bonuses.max-extra-units-per-block", 128));
+
+        vanillaMiningYieldEnabled = getConfig().getBoolean("yield-bonuses.vanilla.mining.enabled", true);
+        vanillaWoodcuttingYieldEnabled = getConfig().getBoolean("yield-bonuses.vanilla.woodcutting.enabled", true);
+        vanillaFarmingYieldEnabled = getConfig().getBoolean("yield-bonuses.vanilla.farming.enabled", true);
+
+        vanillaMiningRequireMatchingTool = getConfig().getBoolean("yield-bonuses.vanilla.mining.require-matching-tool", true);
+        vanillaWoodcuttingRequireMatchingTool = getConfig().getBoolean("yield-bonuses.vanilla.woodcutting.require-matching-tool", true);
+        vanillaFarmingRequireMatchingTool = getConfig().getBoolean("yield-bonuses.vanilla.farming.require-matching-tool", false);
+
+        vanillaMiningYieldDrops.clear();
+        loadYieldMaterialMap("yield-bonuses.vanilla.mining.resources", vanillaMiningYieldDrops);
+
+        vanillaFarmingYieldDrops.clear();
+        loadYieldMaterialMap("yield-bonuses.vanilla.farming.resources", vanillaFarmingYieldDrops);
+    }
+
+    private void loadYieldMaterialMap(String path, Map<Material, Material> target) {
+        ConfigurationSection section = getConfig().getConfigurationSection(path);
+        if (section == null || target == null) return;
+
+        for (String blockName : section.getKeys(false)) {
+            Material block = Material.matchMaterial(blockName);
+            Material drop = Material.matchMaterial(section.getString(blockName, ""));
+            if (block == null || drop == null || drop == Material.AIR) {
+                getLogger().warning("Entrada inválida en " + path + ": " + blockName + " -> " + section.getString(blockName));
+                continue;
+            }
+            target.put(block, drop);
+        }
     }
 
     private void loadIdentificationSettings() {
@@ -1850,15 +1937,36 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         EquipmentBonuses bonuses = readCombinedBonuses(player);
         boolean isNode = nodeName != null;
-        double chance = isNode ? bonuses.treeNodeExtra : bonuses.rareMinerals;
         if (isNode && !treeNodeExtraBonusEnabled) return;
         if (!isNode && !headOreExtraBonusEnabled) return;
-        if (chance <= 0.0) return;
 
-        if (ThreadLocalRandom.current().nextDouble(100.0) >= chance) return;
+        ItemStack tool = player.getInventory().getItemInMainHand();
+        if (!isNode && shouldDisableMiningBonusForSilkTouch(tool)) return;
 
-        int amount = isNode ? treeNodeExtraAmount : headOreExtraAmount;
+        double bonusPercent = isNode ? bonuses.treeNodeExtra : bonuses.rareMinerals;
+        int extraUnits = rollYieldExtraUnits(bonusPercent);
+        if (extraUnits <= 0) return;
+
+        int perUnit = isNode ? treeNodeExtraAmount : headOreExtraAmount;
+        int amount = safeMultiplyYieldAmount(extraUnits, perUnit);
         dropExtraMmoItem(dropType, dropId, player, block, amount, isNode ? "nodo" : "mineral");
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onMonitorVanillaYield(BlockBreakEvent event) {
+        if (internalBreakEvent || !vanillaYieldEnabled) return;
+        if (!event.isDropItems()) return;
+
+        Player player = event.getPlayer();
+        if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
+
+        Block block = event.getBlock();
+        ItemStack tool = player.getInventory().getItemInMainHand();
+        VanillaYieldDrop yield = calculateVanillaYield(player, block, tool);
+        if (yield == null || yield.amount <= 0) return;
+
+        dropMaterialExtra(block.getWorld(), block.getLocation().add(0.5, 0.55, 0.5), yield.material, yield.amount);
+        debug("Rendimiento vanilla: " + block.getType() + " -> " + yield.material + " x" + yield.amount);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -2186,8 +2294,12 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (!canBreakExtraBlock(player, block)) return false;
 
         CustomDropBlockSnapshot dropSnapshot = CustomDropBlockSnapshot.capture(block);
+        VanillaYieldDrop vanillaYield = calculateVanillaYield(player, block, tool);
         boolean broken = block.breakNaturally(tool);
         if (broken) {
+            if (vanillaYield != null && vanillaYield.amount > 0) {
+                dropMaterialExtra(dropSnapshot.world, dropSnapshot.location.clone().add(0.5, 0.55, 0.5), vanillaYield.material, vanillaYield.amount);
+            }
             if (shouldRollCustomDropsOnExtra(sourceCategory)) {
                 rollCustomDrops(player, dropSnapshot, tool);
             }
@@ -2209,6 +2321,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         Material cropType = block.getType();
         World world = block.getWorld();
         Collection<ItemStack> drops = new ArrayList<>(block.getDrops(tool));
+        VanillaYieldDrop vanillaYield = calculateVanillaYield(player, block, tool);
         rollCustomDrops(player, block, tool);
 
         if (autoReplant) {
@@ -2217,6 +2330,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             if (seed != null) consumedSeed = consumeOne(drops, seed);
 
             if (!replantNeedsSeed || consumedSeed) {
+                addMaterialExtra(drops, vanillaYield);
                 dropItems(world, block, drops);
                 block.setType(cropType, false);
                 if (block.getBlockData() instanceof Ageable ageable) {
@@ -2227,6 +2341,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             }
         }
 
+        addMaterialExtra(drops, vanillaYield);
         dropItems(world, block, drops);
         block.setType(Material.AIR, true);
     }
@@ -2248,7 +2363,9 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
             CustomDropCategory category = resolveCustomDropCategory(def, snapshot);
             double effectiveChance = def.chance;
-            if (isRelativeCustomDropBonusEnabled(category)) {
+            boolean miningBonusBlockedBySilkTouch = category == CustomDropCategory.MINING
+                    && shouldDisableMiningBonusForSilkTouch(tool);
+            if (isRelativeCustomDropBonusEnabled(category) && !miningBonusBlockedBySilkTouch) {
                 effectiveChance = applyRelativeBonus(effectiveChance, relativeBonusForCategory(bonuses, category));
             }
 
@@ -2361,6 +2478,104 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         return Math.max(0.0, Math.min(100.0, result));
     }
 
+    /**
+     * Convierte un porcentaje acumulativo en unidades extra sin hacer un loop por cada 100%.
+     * 80%  -> 0 seguros + 80% de +1
+     * 170% -> 1 seguro  + 70% de +1
+     * 550% -> 5 seguros + 50% de +1
+     */
+    private int rollYieldExtraUnits(double bonusPercent) {
+        if (bonusPercent <= 0.0 || maxYieldExtraUnitsPerBlock <= 0) return 0;
+
+        double safeBonus = Math.max(0.0, bonusPercent);
+        long guaranteed = (long) Math.floor(safeBonus / 100.0);
+        double remainder = safeBonus - (guaranteed * 100.0);
+
+        int extra = (int) Math.min(guaranteed, (long) maxYieldExtraUnitsPerBlock);
+        if (extra < maxYieldExtraUnitsPerBlock
+                && remainder > 0.0
+                && ThreadLocalRandom.current().nextDouble(100.0) < remainder) {
+            extra++;
+        }
+        return extra;
+    }
+
+    private int safeMultiplyYieldAmount(int units, int amountPerUnit) {
+        if (units <= 0 || amountPerUnit <= 0) return 0;
+        long result = (long) units * (long) amountPerUnit;
+        return (int) Math.min(result, Integer.MAX_VALUE);
+    }
+
+    private boolean shouldDisableMiningBonusForSilkTouch(ItemStack tool) {
+        return miningYieldDisabledBySilkTouch
+                && tool != null
+                && tool.getType() != Material.AIR
+                && tool.getEnchantmentLevel(Enchantment.SILK_TOUCH) > 0;
+    }
+
+    private VanillaYieldDrop calculateVanillaYield(Player player, Block block, ItemStack tool) {
+        if (!vanillaYieldEnabled || player == null || block == null) return null;
+
+        Material type = block.getType();
+        Material dropMaterial = null;
+        double bonusPercent = 0.0;
+
+        if (vanillaMiningYieldEnabled && vanillaMiningYieldDrops.containsKey(type)) {
+            if (vanillaMiningRequireMatchingTool && (tool == null || !isPickaxe(tool.getType()))) return null;
+            if (shouldDisableMiningBonusForSilkTouch(tool)) return null;
+
+            // Evita generar recursos si la herramienta ni siquiera puede cosechar la mena.
+            // Fortune solo interviene en el drop vanilla; el extra de MDVTools siempre es
+            // una unidad base por cada 100% de bonus. isValidTool está deprecado en Paper,
+            // pero en 1.21.6 sigue siendo la comprobación directa de "correcto para drops".
+            if (tool == null || !block.isValidTool(tool)) return null;
+
+            dropMaterial = vanillaMiningYieldDrops.get(type);
+            bonusPercent = readCombinedBonuses(player).rareMinerals;
+        } else if (vanillaWoodcuttingYieldEnabled && logsAllowed.contains(type) && isWoodLikeMaterial(type)) {
+            if (vanillaWoodcuttingRequireMatchingTool && (tool == null || !isAxe(tool.getType()))) return null;
+            dropMaterial = type;
+            bonusPercent = readCombinedBonuses(player).treeNodeExtra;
+        } else if (vanillaFarmingYieldEnabled && vanillaFarmingYieldDrops.containsKey(type)) {
+            if (!isMatureCrop(block)) return null;
+            if (vanillaFarmingRequireMatchingTool && (tool == null || !isHoe(tool.getType()))) return null;
+            dropMaterial = vanillaFarmingYieldDrops.get(type);
+            bonusPercent = readCombinedBonuses(player).agricultureRareDrops;
+        }
+
+        if (dropMaterial == null || dropMaterial == Material.AIR || bonusPercent <= 0.0) return null;
+
+        int amount = rollYieldExtraUnits(bonusPercent);
+        return amount <= 0 ? null : new VanillaYieldDrop(dropMaterial, amount);
+    }
+
+    private void addMaterialExtra(Collection<ItemStack> drops, VanillaYieldDrop yield) {
+        if (yield == null || drops == null || yield.amount <= 0 || yield.material == Material.AIR) return;
+
+        ItemStack probe = new ItemStack(yield.material, 1);
+        int maxStack = Math.max(1, probe.getMaxStackSize());
+        int remaining = yield.amount;
+        while (remaining > 0) {
+            int amount = Math.min(remaining, maxStack);
+            drops.add(new ItemStack(yield.material, amount));
+            remaining -= amount;
+        }
+    }
+
+    private void dropMaterialExtra(World world, Location location, Material material, int amount) {
+        if (world == null || location == null || material == null || material == Material.AIR || amount <= 0) return;
+
+        ItemStack probe = new ItemStack(material, 1);
+        int maxStack = Math.max(1, probe.getMaxStackSize());
+        int remaining = amount;
+        while (remaining > 0) {
+            int stackAmount = Math.min(remaining, maxStack);
+            Item item = world.dropItemNaturally(location, new ItemStack(material, stackAmount));
+            item.setPickupDelay(10);
+            remaining -= stackAmount;
+        }
+    }
+
     private void ensureHeadOreKeys() {
         if (headOreOreKey != null && headOreNodeKey != null && headOreDropTypeKey != null && headOreDropIdKey != null) return;
         String pluginName = getConfig().getString("equipment-bonuses.mdvheadores.plugin-name", "MDVHeadOres");
@@ -2374,11 +2589,19 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     private void dropExtraMmoItem(String typeId, String itemId, Player player, Block block, int amount, String reason) {
         amount = Math.max(1, amount);
-        ItemStack stack = buildMmoItemStack(typeId, itemId, amount);
+        ItemStack stack = buildMmoItemStack(typeId, itemId, 1);
         if (stack != null && stack.getType() != Material.AIR) {
             Location location = block.getLocation().add(0.5, 0.55, 0.5);
-            Item item = block.getWorld().dropItemNaturally(location, stack);
-            item.setPickupDelay(10);
+            int maxStack = Math.max(1, stack.getMaxStackSize());
+            int remaining = amount;
+            while (remaining > 0) {
+                int stackAmount = Math.min(remaining, maxStack);
+                ItemStack droppedStack = stack.clone();
+                droppedStack.setAmount(stackAmount);
+                Item item = block.getWorld().dropItemNaturally(location, droppedStack);
+                item.setPickupDelay(10);
+                remaining -= stackAmount;
+            }
             debug("Drop extra por lore (" + reason + "): " + typeId + ":" + itemId + " x" + amount);
             return;
         }
@@ -4952,6 +5175,16 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         FARMING,
         MINING,
         WOODCUTTING
+    }
+
+    private static final class VanillaYieldDrop {
+        final Material material;
+        final int amount;
+
+        VanillaYieldDrop(Material material, int amount) {
+            this.material = material;
+            this.amount = Math.max(0, amount);
+        }
     }
 
     private static final class CustomDropBlockSnapshot {

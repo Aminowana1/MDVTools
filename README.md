@@ -1,4 +1,10 @@
-# MDVTools 1.0.28
+# MDVTools 1.0.29
+
+## MDVTools 1.0.29 - El TPA pasa a MDVSocial
+
+- MDVTools ya no registra `/tpa`, `/tpaccept`, `/tpdeny`, `/aceptartp`, `/rechazartp` ni `/tpacancel`.
+- El sistema completo vive ahora en MDVSocial (ver `docs/TPA.md` de MDVSocial). El permiso pasa a ser `mdvsocial.tpa`.
+- MDVSocial importa sola la sección `tpa` de este `config.yml` la primera vez que arranca; después se puede borrar de aquí.
 
 ## MDVTools 1.0.28 - Rendimiento acumulativo de drops
 
@@ -162,7 +168,7 @@ Requieren PlaceholderAPI:
 
 Cambia `mining` por `farming` o `woodcutting`. También funcionan `minero`, `agricultor` y `lenador`. Añade `_formatted` al final para recibir un valor como `+12.5%`.
 
-## MDVTools 1.0.15 - Gracia inicial de movimiento en TPA
+## MDVTools 1.0.15 - Gracia inicial de movimiento en TPA (ahora en MDVSocial)
 
 - El TPA mantiene una espera total configurable de 4 segundos.
 - Durante el primer segundo después de aceptar, el solicitante todavía puede moverse sin cancelar.

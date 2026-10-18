@@ -1,0 +1,760 @@
+# MDVTools 1.0.28
+# Plugin de herramientas de profesión para MDVCRAFT.
+#
+# El plugin lee líneas del lore del item:
+# '&3 &7■ &fTala Multiple: 1'
+# '&3 &7■ &fRotura Multiple: 8'
+# '&3 &7■ &fForma de Pico: Plano 3x3'
+# '&3 &7■ &fMulti Cosecha: 2'
+# '&3 &7■ &fAuto Replantar'
+#
+# Los números significan bloques/cultivos EXTRA.
+# Ejemplo: Rotura Multiple: 2 = rompe el bloque normal + 2 bloques extra.
+
+debug: false
+
+# Parche anti-bloques fantasma para herramientas muy rápidas.
+# No rompe ni dropea nada: solo reenvía al cliente el estado real del bloque
+# 1 y 3 ticks después de minar, para corregir piedras fantasma irrompibles.
+anti-ghost:
+  enabled: true
+  update-neighbors: true
+  update-nearby-players: true
+  player-radius: 8
+  delays:
+    - 1
+    - 3
+  # Si está en false, funciona con cualquier pico vanilla/MMOItems rápido.
+  # Si está en true, solo funciona si la herramienta tiene lore MDVTools.
+  only-tools-with-mdv-lore: false
+  allowed-blocks:
+    - STONE
+    - DEEPSLATE
+    - COBBLESTONE
+    - COBBLED_DEEPSLATE
+    - GRANITE
+    - DIORITE
+    - ANDESITE
+    - TUFF
+    - CALCITE
+    - DRIPSTONE_BLOCK
+    - COAL_ORE
+    - DEEPSLATE_COAL_ORE
+    - IRON_ORE
+    - DEEPSLATE_IRON_ORE
+    - COPPER_ORE
+    - DEEPSLATE_COPPER_ORE
+    - GOLD_ORE
+    - DEEPSLATE_GOLD_ORE
+    - REDSTONE_ORE
+    - DEEPSLATE_REDSTONE_ORE
+    - LAPIS_ORE
+    - DEEPSLATE_LAPIS_ORE
+    - DIAMOND_ORE
+    - DEEPSLATE_DIAMOND_ORE
+    - EMERALD_ORE
+    - DEEPSLATE_EMERALD_ORE
+
+
+messages:
+  prefix: "&6&l[&5&lMDVCRAFT&6&l]  &4»  &r"
+  reloaded: "&aMDVTools recargado."
+  no-permission: "&cNo tienes permiso para hacer eso."
+
+lore:
+  # Se detectan también variantes con tilde:
+  # Multiple / Múltiple
+  tala-multiple: "Tala Multiple"
+  rotura-multiple: "Rotura Multiple"
+  forma-pico: "Forma de Pico"
+  multi-cosecha: "Multi Cosecha"
+  auto-replantar: "Auto Replantar"
+
+durability:
+  enabled: true
+  cost-per-extra-block: 1
+  cost-per-extra-crop: 1
+  respect-unbreaking: true
+
+mining:
+  enabled: true
+  # Límite real de bloques EXTRA, sin contar el bloque original.
+  # 8 = plano 3x3 completo. 15 = rectángulo 4x4. 26 = cubo 3x3x3.
+  max-extra-blocks: 32
+
+  # Forma usada cuando la herramienta no tiene "Forma de Pico" en el lore.
+  # Valores: LINE, PLANE/PLANO/CUADRADO/RECTANGULO o CUBE/CUBO.
+  mode: LINE
+
+  # Protección contra dimensiones absurdas escritas en el lore.
+  shapes:
+    max-width: 7
+    max-height: 7
+    max-depth: 5
+
+  # Ejemplos de lore por herramienta:
+  # '&3 &7■ &fRotura Multiple: 8'
+  # '&3 &7■ &fForma de Pico: Plano 3x3'
+  #
+  # '&3 &7■ &fRotura Multiple: 15'
+  # '&3 &7■ &fForma de Pico: Rectangulo 4x4'
+  #
+  # '&3 &7■ &fRotura Multiple: 26'
+  # '&3 &7■ &fForma de Pico: Cubo 3x3x3'
+  allowed-blocks:
+    - STONE
+    - DEEPSLATE
+    - COBBLESTONE
+    - COBBLED_DEEPSLATE
+    - GRANITE
+    - DIORITE
+    - ANDESITE
+    - TUFF
+    - CALCITE
+    - DRIPSTONE_BLOCK
+    - COAL_ORE
+    - DEEPSLATE_COAL_ORE
+    - IRON_ORE
+    - DEEPSLATE_IRON_ORE
+    - COPPER_ORE
+    - DEEPSLATE_COPPER_ORE
+    - GOLD_ORE
+    - DEEPSLATE_GOLD_ORE
+    - REDSTONE_ORE
+    - DEEPSLATE_REDSTONE_ORE
+    - LAPIS_ORE
+    - DEEPSLATE_LAPIS_ORE
+    - DIAMOND_ORE
+    - DEEPSLATE_DIAMOND_ORE
+    - EMERALD_ORE
+    - DEEPSLATE_EMERALD_ORE
+
+woodcutting:
+  enabled: true
+  max-extra-blocks: 24
+  # CONNECTED = busca troncos conectados en 6 direcciones.
+  mode: CONNECTED
+  allowed-blocks:
+    - OAK_LOG
+    - SPRUCE_LOG
+    - BIRCH_LOG
+    - JUNGLE_LOG
+    - ACACIA_LOG
+    - DARK_OAK_LOG
+    - MANGROVE_LOG
+    - CHERRY_LOG
+    - PALE_OAK_LOG
+    - STRIPPED_OAK_LOG
+    - STRIPPED_SPRUCE_LOG
+    - STRIPPED_BIRCH_LOG
+    - STRIPPED_JUNGLE_LOG
+    - STRIPPED_ACACIA_LOG
+    - STRIPPED_DARK_OAK_LOG
+    - STRIPPED_MANGROVE_LOG
+    - STRIPPED_CHERRY_LOG
+    - STRIPPED_PALE_OAK_LOG
+
+farming:
+  enabled: true
+  max-extra-crops: 24
+  auto-replant-needs-seed-from-drops: true
+  # Si true, el bloque original también se cosecha manualmente para poder replantarlo.
+  handle-original-crop: true
+  allowed-crops:
+    - WHEAT
+    - CARROTS
+    - POTATOES
+    - BEETROOTS
+    - NETHER_WART
+
+# Bonus leídos desde el lore de armaduras equipadas y de la herramienta en MANO PRINCIPAL.
+# La mano secundaria y el resto del inventario no cuentan.
+# Formato de lore recomendado:
+# '&8Agricultura Drops raros: &a+2%'
+# '&8Minerales Raros: &a+2%'
+# '&8Nodos de arbol extra: &a+2%'
+#
+# Las tres líneas también pueden modificar de forma RELATIVA los drops clasificados
+# en custom-drops.yml como FARMING, MINING o WOODCUTTING.
+# Ejemplo: chance base 0.25%, bonus +8% => 0.25 * 1.08 = 0.27%.
+# Minerales Raros / Nodos de arbol extra también usan rendimiento acumulativo en MDVHeadOres:
+# cada 100% garantiza +1 unidad y el resto queda como probabilidad adicional.
+equipment-bonuses:
+  enabled: true
+
+  # Tope de armadura + herramienta, por cada profesión.
+  # 10000% permite progresión acumulativa amplia sin riesgo de valores absurdos.
+  max-total-bonus-percent: 10000.0
+  # Tope final de armadura + herramienta + nivel de profesión.
+  max-combined-bonus-percent: 10000.0
+
+  main-hand-tools:
+    enabled: true
+    # true: la línea agrícola solo funciona en azadas, minerales en picos y nodos en hachas.
+    require-matching-tool-type: true
+
+  lore:
+    agriculture-rare-drops: "Agricultura Drops raros"
+    rare-minerals: "Minerales Raros"
+    tree-node-extra: "Nodos de arbol extra"
+
+  agriculture-rare-drops:
+    enabled: true
+
+  rare-minerals:
+    enabled: true
+    extra-amount: 1
+
+  tree-node-extra:
+    enabled: true
+    extra-amount: 1
+
+  mdvheadores:
+    plugin-name: "MDVHeadOres"
+
+
+# Bonus por nivel de las profesiones de MMOCore.
+# Los IDs corresponden al nombre del archivo YAML dentro de plugins/MMOCore/professions:
+# mining.yml -> mining, farming.yml -> farming, woodcutting.yml -> woodcutting.
+#
+# Se suman a los bonus de armadura y herramienta:
+# - Las tres profesiones aumentan de forma RELATIVA los custom drops de su categoría.
+# - Minería usa además rendimiento acumulativo en vetas MDVHeadOres y menas vanilla.
+# - Leñador usa además rendimiento acumulativo en nodos MDVHeadOres y troncos vanilla.
+# - Agricultura usa rendimiento acumulativo en cultivos vanilla, mientras sus drops raros siguen relativos.
+profession-bonuses:
+  enabled: true
+  mmocore-plugin-name: "MMOCore"
+
+  # Evita consultar la API varias veces por bloque. 0 desactiva el cache en hilo principal.
+  cache-ms: 1000
+
+  # true: nivel 1 ya entrega un incremento. false: empieza a sumar desde nivel 2.
+  count-starting-level: true
+  max-profession-bonus-percent: 10000.0
+
+  mining:
+    profession-id: "mining"
+    bonus-per-level: 0.60
+
+  farming:
+    profession-id: "farming"
+    bonus-per-level: 0.75
+
+  woodcutting:
+    profession-id: "woodcutting"
+    bonus-per-level: 0.50
+
+  # Placeholders principales:
+  # %mdvtools_mining_level%
+  # %mdvtools_mining_bonus%              -> solo nivel de profesión
+  # %mdvtools_mining_armor_bonus%
+  # %mdvtools_mining_tool_bonus%
+  # %mdvtools_mining_equipment_bonus%    -> armadura + herramienta
+  # %mdvtools_mining_total_bonus%        -> profesión + equipo
+  #
+  # Cambia mining por farming o woodcutting. También existen alias españoles:
+  # minero, agricultor y lenador.
+  # Agrega _formatted al final para obtener, por ejemplo, +12.5%.
+
+
+# ==========================================================
+# RENDIMIENTO ACUMULATIVO DE PROFESIONES
+#
+# Convierte el bonus total en drops extra sin loops por porcentaje:
+#  80%  = 80% de +1
+# 170%  = +1 seguro y 70% de +1 adicional
+# 550%  = +5 seguros y 50% de +1 adicional
+#
+# Este sistema NO reemplaza los custom-drops raros. Sus chances siguen
+# aumentando de forma RELATIVA mediante custom-drops.relative-bonuses.
+# Fortune/Suerte tampoco multiplica estos extras: cada 100% agrega exactamente
+# una unidad base del recurso configurado.
+# ==========================================================
+yield-bonuses:
+  system-version: 2
+  enabled: true
+
+  # Tope de seguridad de unidades extra generadas por un solo bloque.
+  # No afecta el cálculo normal; 550% solo genera 5 o 6.
+  max-extra-units-per-block: 128
+
+  # Si el pico tiene Silk Touch, los porcentajes de MINERÍA no se aplican:
+  # - no hay extras de menas vanilla
+  # - no hay extras de vetas MDVHeadOres
+  # - los custom-drops MINING conservan su chance base, pero sin multiplicador de bonus
+  mining-disable-with-silk-touch: true
+
+  vanilla:
+    mining:
+      enabled: true
+      # Evita generar recursos si se intenta romper una mena sin un pico.
+      require-matching-tool: true
+      # Cada +1 del rendimiento entrega UNA unidad de este recurso, independiente de Fortune.
+      resources:
+        COAL_ORE: COAL
+        DEEPSLATE_COAL_ORE: COAL
+        IRON_ORE: RAW_IRON
+        DEEPSLATE_IRON_ORE: RAW_IRON
+        COPPER_ORE: RAW_COPPER
+        DEEPSLATE_COPPER_ORE: RAW_COPPER
+        GOLD_ORE: RAW_GOLD
+        DEEPSLATE_GOLD_ORE: RAW_GOLD
+        REDSTONE_ORE: REDSTONE
+        DEEPSLATE_REDSTONE_ORE: REDSTONE
+        LAPIS_ORE: LAPIS_LAZULI
+        DEEPSLATE_LAPIS_ORE: LAPIS_LAZULI
+        DIAMOND_ORE: DIAMOND
+        DEEPSLATE_DIAMOND_ORE: DIAMOND
+        EMERALD_ORE: EMERALD
+        DEEPSLATE_EMERALD_ORE: EMERALD
+        NETHER_QUARTZ_ORE: QUARTZ
+        NETHER_GOLD_ORE: GOLD_NUGGET
+        ANCIENT_DEBRIS: ANCIENT_DEBRIS
+
+    woodcutting:
+      enabled: true
+      # Usa los bloques de woodcutting.allowed-blocks y entrega el mismo tronco roto.
+      require-matching-tool: true
+
+    farming:
+      enabled: true
+      # false permite cosechar normalmente a mano y seguir usando profesión/armadura.
+      # El bonus del lore de la herramienta solo suma si llevas una azada, como antes.
+      require-matching-tool: false
+      # Solo se aplica a cultivos maduros. Cada +1 entrega el producto principal.
+      resources:
+        WHEAT: WHEAT
+        CARROTS: CARROT
+        POTATOES: POTATO
+        BEETROOTS: BEETROOT
+        NETHER_WART: NETHER_WART
+
+
+# Comportamiento global de custom-drops.yml.
+# No reemplaza custom-drops.yml: solamente controla cómo MDVTools procesa esos drops.
+custom-drops:
+  # Los bloques adicionales destruidos por Rotura/Tala Múltiple también hacen su sorteo.
+  roll-on-extra-blocks:
+    mining: true
+    woodcutting: true
+
+  # Aplica el bonus total de profesión + armadura + herramienta de forma RELATIVA
+  # sobre la chance base de cada drop según su campo category.
+  # Ejemplo: 0.08% base con +50% total => 0.12% final.
+  relative-bonuses:
+    enabled: true
+    farming: true
+    mining: true
+    woodcutting: true
+
+  # Categorías válidas dentro de cada entrada de custom-drops.yml:
+  # category: FARMING
+  # category: MINING
+  # category: WOODCUTTING
+  # category: NONE   -> no recibe bonus relativo
+  # category: AUTO   -> detecta según cultivo, tronco o bloque minable
+
+
+# ==========================================================
+# AMULETOS
+#
+# Las habilidades de amuletos, SWAP_ITEMS y flechas extra
+# se configuran ahora en el archivo separado amulets.yml.
+# Se recarga junto con esta configuración mediante:
+# /mdvtools reload
+# ==========================================================
+
+
+# Bloqueo corto al cambiar a un arma MMOItems.
+# Objetivo: evitar que un jugador cambie de arma y use una habilidad activa inmediatamente.
+# Es event-driven: no revisa jugadores cada tick. Solo actúa cuando cambian slot/mano o intentan usar el arma.
+weapon-swap-lock:
+  enabled: true
+
+  # 40 ticks = 2 segundos.
+  duration-ticks: 40
+
+  # true = aplica el bloqueo cuando el nuevo item en mano principal es un arma.
+  # No afecta consumibles, pociones, comida, materiales ni items normales al usarlos.
+  only-when-new-item-is-weapon: true
+
+  # true = si pasas de arma -> consumible/item no arma -> la misma arma, no aplica un lock nuevo.
+  # Sirve para poder tomar una poción/maná y volver al arma que ya estabas usando sin castigo.
+  ignore-return-to-same-weapon-after-non-weapon: true
+
+  # Tipos de MMOItems considerados armas para este bloqueo.
+  # Usa aquí los IDs de TYPE de MMOItems, no los IDs de items individuales.
+  mmoitems-types:
+    - SWORD
+    - DAGGER
+    - AXE
+    - HAMMER
+    - MACE
+    - BOW
+    - CROSSBOW
+    - STAFF
+    - WAND
+    - CATALYST
+    - SPEAR
+    - GREATSWORD
+    - GREATSTAFF
+    - LUTE
+
+  # Fallback opcional si algún item no puede leerse como MMOItems.
+  # Por defecto está apagado para no bloquear herramientas vanilla por accidente.
+  fallback-vanilla-materials:
+    enabled: false
+    materials:
+      - WOODEN_SWORD
+      - STONE_SWORD
+      - IRON_SWORD
+      - GOLDEN_SWORD
+      - DIAMOND_SWORD
+      - NETHERITE_SWORD
+      - WOODEN_AXE
+      - STONE_AXE
+      - IRON_AXE
+      - GOLDEN_AXE
+      - DIAMOND_AXE
+      - NETHERITE_AXE
+      - BOW
+      - CROSSBOW
+      - MACE
+
+  block:
+    # Bloquea click izquierdo, shift+izquierdo, click derecho y shift+derecho con el arma.
+    interact-clicks: false
+    # Bloquea golpe melee durante el lock.
+    melee-hit: false
+    # Bloquea disparo vanilla de arco/ballesta durante el lock.
+    bow-shoot: false
+
+    # Bloquea habilidades de MMOItems durante el lock.
+    # Esto es lo importante para evitar cambiar de arma y castear una habilidad al instante.
+    mmoitems-abilities: true
+
+    # Bloquea skills centralizadas por MythicLib durante el lock.
+    # Se registra por reflexión: si MythicLib no está cargado, no rompe el plugin.
+    mythiclib-skills: true
+
+  messages:
+    blocked: "&cAún no afirmas bien el arma en tus manos."
+    # Evita spam si el jugador clickea varias veces durante los 2 segundos.
+    cooldown-ms: 800
+
+  ready-feedback:
+    enabled: true
+    sound:
+      value: "block.note_block.hat"
+      volume: 0.3
+      pitch: 1.6
+    particles:
+      enabled: true
+      particle: "CRIT"
+      amount: 5
+
+
+# Bloqueo real para habilidades de armas a dos manos.
+# Objetivo: si un arma MMOItems tiene two-handed: true / lore de dos manos,
+# no pueda castear habilidades mientras la otra mano esté ocupada.
+# Aplica en ambos sentidos: 2 manos en mainhand + offhand ocupada, o 2 manos en offhand + mainhand ocupada.
+# Es event-driven y solo revisa cuando se intenta usar una habilidad MMOItems/MythicLib.
+# Cobra 1 punto de durabilidad custom de MMOItems al ITEM que originó la habilidad.
+# Distingue mainhand/offhand para que un amuleto o escudo de offhand NO desgaste
+# por error el arma de la mano principal. Si no puede identificar la fuente con
+# seguridad, no cobra a ningún item en lugar de adivinar la mainhand.
+# No muestra mensajes propios: MMOItems sigue manejando su durabilidad/lore.
+# Solo afecta items con max-durability custom de MMOItems.
+ability-durability-cost:
+  enabled: true
+  cost: 1
+  only-custom-durability: true
+
+  # Evita cobrar doble si MMOItems y MythicLib disparan eventos para el mismo casteo.
+  dedupe-window-ms: 75
+
+
+# ==========================================================
+# Barra vanilla para PLAYER_HEAD con Custom Durability de MMOItems
+#
+# SOLO afecta PLAYER_HEAD que tengan MMOITEMS_MAX_DURABILITY > 0.
+# No toca armas, herramientas, cuero, hierro ni ningún otro material.
+#
+# Es event-driven: no hay tareas periódicas ni escaneos por tick.
+# MMOItems mantiene la durabilidad real; MDVTools solo refleja el valor
+# en minecraft:max_damage / minecraft:damage para dibujar la barra.
+# Al 100% de durabilidad la barra se oculta y aparece desde el primer punto perdido.
+# También intercepta en LOWEST únicamente el PlayerItemDamageEvent VANILLA de
+# esas PLAYER_HEAD, antes de MMOItems, para evitar el doble descuento.
+# ==========================================================
+player-head-durability-bar:
+  enabled: true
+
+
+# ==========================================================
+# Protección de durabilidad personalizada de MMOItems
+#
+# Es completamente event-driven: solo se ejecuta cuando MMOItems
+# intenta descontar durabilidad. No revisa jugadores ni items cada tick.
+#
+# Cualquier objeto cuyo resultado final tenga unbreakable: true
+# conservará siempre completa su durabilidad custom de MMOItems.
+# No depende del ID ni del nombre del modificador.
+# ==========================================================
+custom-durability-protection:
+  enabled: true
+
+  detect:
+    # Detector principal y recomendado. MMOItems aplica esta propiedad
+    # cuando un modificador contiene: unbreakable: true
+    item-meta-unbreakable: true
+
+    # Respaldo para MMOItems 6.10.1: también revisa su NBT "Unbreakable".
+    mmoitems-unbreakable-stat: true
+
+
+two-handed-ability-lock:
+  enabled: true
+
+  # true = solo aplica a los tipos de MMOItems listados abajo.
+  # Recomendado dejar true para no tocar consumibles ni objetos raros.
+  only-weapon-types: true
+
+  mmoitems-types:
+    - SWORD
+    - DAGGER
+    - AXE
+    - HAMMER
+    - MACE
+    - BOW
+    - CROSSBOW
+    - STAFF
+    - WAND
+    - CATALYST
+    - SPEAR
+    - GREATSWORD
+    - GREATSTAFF
+    - LUTE
+    - TOME
+    - TOMO
+
+  detect:
+    # Intenta leer el stat two-handed desde NBT de MMOItems si la versión lo guarda ahí.
+    mmoitems-stat: true
+    nbt-keys:
+      - MMOITEMS_TWO_HANDED
+      - MMOITEMS_TWO-HANDED
+      - TWO_HANDED
+      - TWO-HANDED
+      - two-handed
+      - two_handed
+
+    # Fallback por lore. Esto es importante porque algunas versiones solo muestran Dos Manos en lore.
+    lore: true
+    lore-lines:
+      - "Dos Manos"
+      - "Dos manos"
+      - "Two Handed"
+      - "Two-Handed"
+      - "two-handed"
+      - "Requiere ambas manos"
+      - "Ambas manos"
+
+  messages:
+    blocked: "&cNecesitas ambas manos libres para usar esta arma."
+    cooldown-ms: 800
+
+# Pasiva para ballestas: recarga automática al impactar.
+# Lee líneas del lore del item. Recomendado:
+# '&6&lPasiva: &eRecarga Automática al Impacto'
+#
+# Funcionamiento:
+# 1) El jugador dispara una ballesta con el lore configurado.
+# 2) Si el proyectil golpea una entidad, MDVTools recarga la ballesta.
+# 3) Consume 1 flecha al recargar, para evitar munición infinita.
+crossbow-auto-reload:
+  enabled: true
+
+  lore-lines:
+    - "Recarga Automatica al Impacto"
+    - "Recarga Automática al Impacto"
+
+  # true = solo recarga si la flecha/virote golpea una entidad.
+  # false = también recarga si golpea bloques.
+  only-on-entity-hit: true
+
+  # Consume 1 flecha al recargar automáticamente.
+  consume-arrow: true
+  ammo-material: ARROW
+
+  # Pequeño cooldown interno anti-abuso, en milisegundos.
+  cooldown-ms: 150
+
+  # Tiempo máximo para recordar un proyectil marcado antes de limpiarlo.
+  projectile-ttl-ticks: 400
+
+  require-player-online: true
+
+  sound:
+    enabled: true
+    value: "item.crossbow.loading_end"
+    volume: 0.8
+    pitch: 1.3
+
+  particles:
+    enabled: true
+    particle: "CRIT"
+    amount: 8
+
+
+
+# ==========================================================
+# Identificación probabilística de objetos MMOItems
+# El pergamino se reconoce por TYPE + ID interno, nunca por nombre o lore.
+# IMPORTANTE: los pergaminos de este módulo NO deben llevar can-identify: true,
+# porque el sistema nativo de MMOItems identifica siempre con éxito.
+# ==========================================================
+identification:
+  enabled: true
+
+  # false = un objeto sin tier no puede identificarse con estos pergaminos.
+  allow-items-without-tier: false
+
+  # Orden de menor a mayor rareza usado para maximum-tier.
+  tier-order:
+    - COMUN
+    - ESPECIAL
+    - RARO
+    - EPICO
+    - LEGENDARIO
+
+  scrolls:
+    PERGAMINO_IDENTIFICACION_COMUN:
+      type: CONSUMABLE
+      chance: 65.0
+      maximum-tier: COMUN
+      consume-on-success: true
+      consume-on-failure: true
+      # Normalmente un pergamino no se consume cuando el tier es demasiado alto.
+      consume-on-denied: false
+
+  messages:
+    success: "&aHas identificado correctamente el objeto."
+    failure: "&cEl pergamino se deshizo sin revelar el objeto."
+    tier-too-high: "&cEste pergamino no tiene poder suficiente para identificar un objeto de tier &f{tier}&c."
+    invalid-target: "&cSolo puedes usar este pergamino sobre un objeto no identificado."
+    stacked-target: "&cSepara los objetos apilados antes de identificarlos."
+    no-tier: "&cEste objeto no tiene un tier reconocible."
+    internal-error: "&cNo se pudo revelar el objeto. Revisa la consola."
+
+  sounds:
+    success:
+      enabled: true
+      value: "entity.player.levelup"
+      volume: 0.8
+      pitch: 1.6
+    failure:
+      enabled: true
+      value: "block.fire.extinguish"
+      volume: 0.7
+      pitch: 0.8
+    denied:
+      enabled: true
+      value: "block.note_block.bass"
+      volume: 0.6
+      pitch: 0.7
+
+
+# ==========================================================
+# Límite TOTAL del minijuego de pesca custom de MMOCore
+# ==========================================================
+# MMOCore conserva su timeout normal entre tirones/clicks.
+# MDVTools añade un segundo límite independiente: desde que el pez pica
+# (State.BITE), el jugador dispone de este tiempo TOTAL para completar
+# todos los tugs. Si no lo logra, el anzuelo desaparece y pierde la captura.
+fishing-fight-timer:
+  enabled: true
+
+  # Tiempo total disponible desde que empieza la resistencia del pez.
+  max-fight-time-seconds: 3.0
+
+  # true = solo se activa cuando MMOCore tiene una tabla de pesca custom
+  # válida para ese jugador. Recomendado para no tocar pesca vanilla ajena.
+  only-mmocore-custom-fishing: true
+  mmocore-plugin-name: "MMOCore"
+
+  # Actívalo temporalmente si querés ver en consola cuándo inicia/vence el timer.
+  debug: false
+
+  # Holograma temporal que aparece sobre la posición del anzuelo cuando
+  # se agota el tiempo. Se usa TextDisplay vanilla, sin dependencias extra.
+  hologram:
+    enabled: true
+    text: "&c¡El pez escapó! &7No lograste recogerlo a tiempo."
+    duration-seconds: 2.0
+    y-offset: 0.85
+    shadowed: true
+    see-through: true
+
+  sound:
+    enabled: true
+    value: "entity.fishing_bobber.retrieve"
+    volume: 0.8
+    pitch: 0.7
+
+# ==========================================================
+# TPA simple de MDVTools
+# Reemplaza el flujo de Essentials con botones clickeables.
+# ==========================================================
+tpa:
+  enabled: true
+  request-timeout-seconds: 60
+  cooldown-seconds: 15
+
+  # Espera total después de aceptar antes de teletransportar al solicitante.
+  teleport-delay-seconds: 4
+
+  # Durante este margen inicial el jugador todavía puede moverse.
+  # Con 4 segundos totales y 1 de gracia, quedan 3 segundos inmóvil.
+  movement-grace-seconds: 1
+
+  cancel-delay-on-move: true
+  cancel-delay-on-damage: true
+  cancel-delay-on-attack: true
+
+  invulnerability-after-teleport-seconds: 5
+  invulnerability-cancel-on-attack: true
+  allow-cross-world: true
+
+  messages:
+    disabled: "&cEl sistema de TPA está desactivado."
+    player-not-found: "&cJugador no encontrado o desconectado."
+    cannot-self: "&cNo puedes enviarte una solicitud a ti mismo."
+    cross-world-disabled: "&cNo puedes usar TPA entre mundos distintos."
+    request-sent: "&eSolicitud de teletransporte enviada a &6%target%&e. &7Expira en &f%seconds% segundos&7."
+    request-received: "&6%player% &equiere teletransportarse hacia ti. &7Expira en &f%seconds% segundos&7."
+    request-expired: "&cLa solicitud de teletransporte ha expirado."
+    request-expired-target: "&7La solicitud de &f%player% &7ha expirado."
+    request-denied: "&cSolicitud de teletransporte rechazada."
+    request-denied-target: "&eRechazaste la solicitud de &f%player%&e."
+    request-accepted: "&aTeletransporte completado."
+    request-accepted-target: "&aAceptaste la solicitud de &f%player%&a."
+    request-cancelled: "&eCancelaste tu solicitud de teletransporte."
+    request-cancelled-target: "&7%player% canceló su solicitud de teletransporte."
+    request-cancelled-disconnect: "&7La solicitud fue cancelada porque el jugador se desconectó."
+    target-disconnected: "&cEl jugador objetivo se desconectó."
+    requester-offline: "&cEl jugador que envió la solicitud ya no está conectado."
+    no-pending-request: "&cNo tienes solicitudes de teletransporte pendientes."
+    request-not-valid: "&cEsa solicitud ya no es válida o ha expirado."
+    no-outgoing-request: "&cNo tienes una solicitud enviada pendiente."
+    cooldown: "&cDebes esperar &f%seconds%s &cantes de enviar otra solicitud."
+    teleport-failed: "&cNo se pudo completar el teletransporte."
+    warmup-started: "&eTeletransporte aceptado. Tienes &f%grace_seconds%s &epara detenerte; después no te muevas durante &f%movement_lock_seconds%s&e. Entrar en combate cancela la espera."
+    warmup-started-target: "&7%player% se teletransportará hacia ti en &f%seconds% segundos&7."
+    warmup-cancelled-move: "&cEl teletransporte fue cancelado porque te moviste."
+    warmup-cancelled-damage: "&cEl teletransporte fue cancelado porque recibiste daño."
+    warmup-cancelled-attack: "&cEl teletransporte fue cancelado porque atacaste."
+    warmup-cancelled-target: "&7El teletransporte de &f%player% &7fue cancelado."
+    invulnerable: "&aTienes protección temporal durante &f%seconds%s&a."
+    invulnerability-ended-on-attack: "&cTu protección temporal terminó al atacar."

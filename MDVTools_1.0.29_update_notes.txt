@@ -1,0 +1,57 @@
+MDVTools 1.0.29
+
+CAMBIOS
+- Corrige la captura de la mano del clic: MythicLib puede castear dentro de su
+  listener antes de que MDVTools reciba PlayerInteractEvent. Ahora también se
+  registra PlayerClickEvent en LOWEST.
+- Cobra al objeto que origina la habilidad y conserva el contexto para callbacks
+  anidados. Un item explícito del evento tiene prioridad sobre pistas anteriores.
+- Compatible con DurabilityItem.custom(Player, EquipmentSlot, ItemStack) y con
+  los constructores anteriores. El coste fijo usa onDurabilityDecrease en las
+  APIs que lo ofrecen, manteniendo CustomDurabilityDamage y la protección.
+- El cobro se observa en MONITOR, después de los bloqueos cancelables; el objeto
+  con durabilidad agotada se comprueba antes para impedir el casteo.
+- Evita el cobro duplicado del evento legacy de MMOItems cuando MythicLib ya
+  proporciona PlayerCastSkillEvent. Conserva dedupe-window-ms.
+- Bedrock: dos pulsaciones de agacharse dentro de 450 ms ejecutan SWAP_ITEMS
+  del amuleto configurado en la mano secundaria. No intercambia los objetos.
+  Hay que soltar agacharse entre las dos pulsaciones.
+- Java: el doble shift no activa este atajo; la tecla F conserva su recorrido.
+- Detección mediante las APIs oficiales de Floodgate o Geyser-Spigot.
+  Sin una API que reconozca al jugador, el atajo permanece inactivo.
+
+INSTALACIÓN
+1. Apaga el servidor y sustituye el JAR anterior por MDVTools-1.0.29.jar.
+   No dejes dos versiones del plugin en la carpeta plugins.
+2. Conserva tu config.yml y custom-drops.yml. El coste existente de 1 sigue válido;
+   durability.enabled: false solo desactiva el coste de bloques/cultivos extra.
+3. Revisa plugins/MDVTools/amulets.yml: offhand-swap-cast.mmoitems debe incluir
+   'AMULETO:*' o tus selectores concretos. Las opciones del doble shift están en
+   ese archivo; consulta MDVTools_1.0.29_amulets.yml.
+   La configuración antigua se migra desde config.yml SOLO cuando amulets.yml
+   se crea por primera vez; si ya existe, edita amulets.yml.
+4. Bedrock necesita Floodgate en este servidor o Geyser-Spigot con su API activa.
+   Con Floodgate en un proxy, también deben llegar los datos al backend según
+   https://geysermc.org/wiki/floodgate/api/ .
+5. Reinicia. Cambios posteriores de configuración: /mdvtools reload.
+
+SOBRE TU PROTECCIÓN ACTUAL
+custom-durability-protection.enabled: true conserva los objetos marcados
+unbreakable: true. Esos objetos seguirán sin perder durabilidad custom por diseño.
+Para que un objeto concreto gaste usos, debe dejar de estar marcado unbreakable.
+Creativo y espectador tampoco pagan durabilidad.
+
+PRUEBA EN TU SERVIDOR
+- En supervivencia, con objeto MMOItems de durabilidad custom no irrompible:
+  anota sus usos y activa una habilidad RIGHT_CLICK sin cambiar de mano antes.
+  Debe restar el coste configurado al objeto de la mano principal.
+- Lleva un arma y un amuleto con usos distintos; F debe gastar el amuleto que
+  origina el casteo, sin gastar el arma por error ni mover objetos.
+- En Bedrock: agacharse, soltar, agacharse en menos de 450 ms activa el amuleto
+  SWAP_ITEMS. Una sola pulsación o una pareja lenta no lo activa.
+- En Java: esa misma pareja de shift no activa el atajo.
+- Los bloqueos de cambio de arma/dos manos y los cooldowns siguen vigentes.
+  Un casteo cancelado o rechazado no debe restar usos.
+
+Las pruebas automatizadas usan dobles de las APIs; no sustituyen una prueba con
+las versiones y los items concretos de tu servidor.

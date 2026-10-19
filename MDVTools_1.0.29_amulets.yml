@@ -1,0 +1,9 @@
+# En plugins/MDVTools/amulets.yml, añade estas claves a TU sección existente.
+# No dupliques offhand-swap-cast ni borres otros amuletos que ya tengas.
+offhand-swap-cast:
+  enabled: true
+  mmoitems:
+    - 'AMULETO:*'
+  bedrock-double-sneak:
+    enabled: true
+    window-ms: 450

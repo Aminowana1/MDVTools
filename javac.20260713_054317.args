@@ -1,7 +1,0 @@
--proc:none
--Xmaxerrs
-5000
--d
-/tmp/mdvjavac
-src/main/java/com/mdvcraft/tools/MDVToolsPlugin.java
-src/main/java/com/mdvcraft/tools/MDVToolsPlaceholderExpansion.java

@@ -1,0 +1,8 @@
+# En plugins/MDVTools/config.yml. Si ya tienes esta sección, consérvala:
+# no hace falta modificarla para actualizar. No dupliques la clave raíz.
+# El ejemplo de amuletos está en MDVTools_1.0.29_amulets.yml.
+ability-durability-cost:
+  enabled: true
+  cost: 1
+  only-custom-durability: true
+  dedupe-window-ms: 40

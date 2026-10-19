@@ -1,6 +1,7 @@
 package com.mdvcraft.tools;
 
 import com.mdvcraft.tools.fishing.FishingFightTimerListener;
+import com.mdvcraft.tools.amulets.BedrockSwapCastListener;
 import io.papermc.paper.datacomponent.DataComponentTypes;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -84,6 +85,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     private boolean debug;
     private FishingFightTimerListener fishingFightTimerListener;
+    private BedrockSwapCastListener bedrockSwapCastListener;
     private Object mmocoreFishingDropExtension;
 
     private Set<Material> miningAllowed = EnumSet.noneOf(Material.class);
@@ -304,6 +306,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private Method mmoIdentifiedItemIdentifyMethod;
 
     private boolean mmoDurabilityReflectionTried;
+    private Method mmoDurabilityCustomFactory;
     private Constructor<?> mmoDurabilityConstructorItemStack;
     private Constructor<?> mmoDurabilityConstructorNbt;
     private Method mmoDurabilityIsValidMethod;
@@ -366,6 +369,9 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         fishingFightTimerListener = new FishingFightTimerListener(this);
         Bukkit.getPluginManager().registerEvents(fishingFightTimerListener, this);
         Bukkit.getPluginManager().registerEvents(this, this);
+        bedrockSwapCastListener = new BedrockSwapCastListener(this, this::isConfiguredOffhandSwapCastItem);
+        bedrockSwapCastListener.reload(amuletsConfig == null ? getConfig() : amuletsConfig);
+        Bukkit.getPluginManager().registerEvents(bedrockSwapCastListener, this);
         registerWeaponSwapLockExternalEvents();
         registerCustomDurabilityProtectionEvent();
         registerPlayerHeadDurabilityBarExternalEvents();
@@ -380,6 +386,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     public void onDisable() {
         disableMMOCoreFishingDropExtensionRuntime();
         if (fishingFightTimerListener != null) fishingFightTimerListener.shutdown();
+        if (bedrockSwapCastListener != null) bedrockSwapCastListener.shutdown();
         weaponSwapLockUntil.clear();
         weaponSwapLockLastBlockedMessage.clear();
         weaponSwapLastWeaponBeforeNonWeapon.clear();
@@ -888,6 +895,7 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         debug("amulets.yml/offhand-swap-cast cargado: enabled=" + offhandSwapCastEnabled
                 + ", always-block=" + offhandSwapCastBlockVanillaAlways
                 + ", items=" + offhandSwapCastMmoItems.size());
+        if (bedrockSwapCastListener != null) bedrockSwapCastListener.reload(cfg);
     }
 
     private void loadRangedExtraArrowSettings() {
@@ -3134,10 +3142,9 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         if (!abilityDurabilityCostEnabled || player == null || slot == null || !isRealItem(item)) return;
         if (slot != EquipmentSlot.HAND && slot != EquipmentSlot.OFF_HAND) return;
 
-        // Solo guardamos mano + timestamp. No leemos NBT aquí: este handler puede
-        // ejecutarse en interacciones normales y queremos que el coste sea mínimo.
+        // Capturamos mano + item + timestamp; el NBT se consulta solo al castear.
         abilityDurabilitySourceHints.put(player.getUniqueId(),
-                new AbilityDurabilitySourceHint(slot, System.currentTimeMillis()));
+                new AbilityDurabilitySourceHint(slot, item.clone(), System.currentTimeMillis()));
     }
 
     private boolean isMmoItem(ItemStack item) {
@@ -3149,6 +3156,8 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         boolean hookMmoItemsAbilities = (weaponSwapLockEnabled && weaponSwapLockBlockMmoItemAbilities) || twoHandedAbilityLockEnabled || abilityDurabilityCostEnabled;
         boolean hookMythicLibSkills = (weaponSwapLockEnabled && weaponSwapLockBlockMythicLibSkills) || twoHandedAbilityLockEnabled || abilityDurabilityCostEnabled;
         if (!hookMmoItemsAbilities && !hookMythicLibSkills) return;
+
+        if (abilityDurabilityCostEnabled) registerAbilityDurabilityClickSourceEvent();
 
         // MMOItems dispara este evento para habilidades de item. Cancelarlo evita que la habilidad se castee
         // aunque PlayerInteractEvent ya haya sido cancelado.
@@ -3185,6 +3194,9 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
             };
 
             Bukkit.getPluginManager().registerEvent(eventClass, this, EventPriority.LOWEST, executor, this, false);
+            // Observar el resultado de todos los bloqueos antes de gastar usos.
+            Bukkit.getPluginManager().registerEvent(eventClass, this, EventPriority.MONITOR,
+                    (listener, event) -> handleAbilityDurabilityExternalEvent(event), this, true);
             weaponSwapLockHookedEvents.add(className);
             debug("weapon-swap-lock conectado a " + className);
         } catch (ClassNotFoundException ignored) {
@@ -3217,8 +3229,49 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         }
 
         AbilityDurabilitySource source = resolveAbilityDurabilitySource(event, player);
-        if (source != null && !chargeAbilityCustomDurability(player, source.item, source.slot)) {
+        if (source != null && isAbilityDurabilitySourceExhausted(player, source.item)) {
             cancellable.setCancelled(true);
+        }
+    }
+
+    private boolean isAbilityDurabilitySourceExhausted(Player player, ItemStack item) {
+        if (!abilityDurabilityCostEnabled || abilityDurabilityCostAmount <= 0
+                || player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR
+                || isCustomDurabilityProtected(item) || !hasMmoCustomDurability(item)) return false;
+        Integer current = readMmoItemInteger(item, "MMOITEMS_DURABILITY");
+        // Un objeto nuevo puede no tener este tag: MMOItems lo considera lleno.
+        return current != null && current <= 0;
+    }
+
+    private void handleAbilityDurabilityExternalEvent(Event event) {
+        if (!abilityDurabilityCostEnabled || !(event instanceof Cancellable cancellable)
+                || cancellable.isCancelled()) return;
+        // AbilityUseEvent es un evento legacy derivado de PlayerCastSkillEvent.
+        // Solo el evento real de MythicLib cobra cuando está disponible.
+        if (event.getClass().getName().equals("net.Indyuce.mmoitems.api.event.AbilityUseEvent")
+                && weaponSwapLockHookedEvents.contains("io.lumine.mythic.lib.api.event.skill.PlayerCastSkillEvent")) return;
+        Player player = extractPlayerFromExternalEvent(event);
+        AbilityDurabilitySource source = resolveAbilityDurabilitySource(event, player);
+        if (source != null) chargeAbilityCustomDurability(player, source.item, source.slot);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void registerAbilityDurabilityClickSourceEvent() {
+        String className = "io.lumine.mythic.lib.api.event.PlayerClickEvent";
+        if (weaponSwapLockHookedEvents.contains(className)) return;
+        try {
+            Class<?> rawClass = Class.forName(className);
+            if (!Event.class.isAssignableFrom(rawClass)) return;
+            Bukkit.getPluginManager().registerEvent((Class<? extends Event>) rawClass, this,
+                    EventPriority.LOWEST, (listener, event) -> {
+                        Player player = extractPlayerFromExternalEvent(event);
+                        rememberAbilityDurabilitySource(player, extractAbilitySourceSlot(event), extractAbilitySourceItem(event));
+                    }, this, false);
+            weaponSwapLockHookedEvents.add(className);
+        } catch (ClassNotFoundException ignored) {
+            // MythicLib anterior a PlayerClickEvent usa las pistas Bukkit.
+        } catch (LinkageError | RuntimeException exception) {
+            debug("No pude conectar la fuente PlayerClickEvent: " + exception.getMessage());
         }
     }
 
@@ -3361,39 +3414,72 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
     private AbilityDurabilitySource resolveAbilityDurabilitySource(Event event, Player player) {
         if (player == null) return null;
 
-        // Si el evento expone item + mano de forma explícita, esa es la fuente
-        // más fiable y no necesitamos ninguna pista adicional.
+        // Un item explícito nunca debe ser reemplazado por una pista antigua.
         ItemStack directItem = extractAbilitySourceItem(event);
         EquipmentSlot directSlot = extractAbilitySourceSlot(event);
-        if (isRealItem(directItem)
-                && (directSlot == EquipmentSlot.HAND || directSlot == EquipmentSlot.OFF_HAND)) {
-            abilityDurabilitySourceHints.remove(player.getUniqueId());
-            return new AbilityDurabilitySource(directItem, directSlot);
+        if (isRealItem(directItem)) {
+            EquipmentSlot slot = directSlot != null ? directSlot : locateHeldAbilityItem(player, directItem);
+            if (slot == EquipmentSlot.HAND || slot == EquipmentSlot.OFF_HAND) {
+                ItemStack held = player.getInventory().getItem(slot);
+                return sameAbilityItem(held, directItem) ? new AbilityDurabilitySource(held, slot) : null;
+            }
+            return null;
         }
 
-        // Fallback preferido: mano del input Bukkit inmediatamente anterior.
-        // Esto es lo que permite distinguir con seguridad mainhand de offhand.
+        if (directSlot == EquipmentSlot.HAND || directSlot == EquipmentSlot.OFF_HAND) {
+            ItemStack held = player.getInventory().getItem(directSlot);
+            return isRealItem(held) ? new AbilityDurabilitySource(held, directSlot) : null;
+        }
+
+        // Las versiones modernas incluyen el input original en SkillMetadata.
+        Object metadata = invokeAbilityGetter(event, "getMetadata");
+        Object sourceEvent = invokeAbilityGetter(metadata, "getSourceEvent");
+        if (sourceEvent instanceof Event input && input != event) {
+            ItemStack inputItem = extractAbilitySourceItem(input);
+            EquipmentSlot inputSlot = extractAbilitySourceSlot(input);
+            if (isRealItem(inputItem) && inputSlot != null) {
+                ItemStack held = player.getInventory().getItem(inputSlot);
+                return sameAbilityItem(held, inputItem) ? new AbilityDurabilitySource(held, inputSlot) : null;
+            }
+        }
+
+        // Se conserva para los callbacks anidados del MISMO casteo. La pista
+        // incluye el item para no cobrar otro que ocupó la mano después.
         AbilityDurabilitySourceHint hint = abilityDurabilitySourceHints.get(player.getUniqueId());
         if (hint != null) {
             long now = System.currentTimeMillis();
             if (now - hint.createdAtMs <= ABILITY_DURABILITY_SOURCE_HINT_TTL_MS) {
                 ItemStack hintedItem = player.getInventory().getItem(hint.slot);
-                if (isRealItem(hintedItem)) {
-                    abilityDurabilitySourceHints.remove(player.getUniqueId());
+                if (sameAbilityItem(hintedItem, hint.item)) {
                     return new AbilityDurabilitySource(hintedItem, hint.slot);
                 }
-            } else {
-                abilityDurabilitySourceHints.remove(player.getUniqueId());
+                // Hay contexto explícito de un input reciente, pero su objeto
+                // ya no está. El MAIN_HAND por defecto de ML no debe cobrar al reemplazo.
+                // Se mantiene hasta caducar para bloquear también el callback MONITOR.
+                return null;
             }
+            abilityDurabilitySourceHints.remove(player.getUniqueId());
         }
 
-        // Último fallback: si el evento trae el item pero no la mano, buscamos
-        // en las dos manos. Si no se puede resolver, NO adivinamos mainhand.
-        if (isRealItem(directItem)) {
-            EquipmentSlot located = locateHeldAbilityItem(player, directItem);
-            if (located != null) return new AbilityDurabilitySource(directItem, located);
+        // PlayerClickEvent puede dispararse dentro del listener LOWEST de ML,
+        // antes que el listener Bukkit de MDVTools. La mano cacheada en ML es
+        // fiable también en esas versiones; nunca asumimos HAND por defecto.
+        Object caster = invokeAbilityGetter(metadata, "getCaster");
+        EquipmentSlot actionHand = normalizeAbilityEquipmentSlot(invokeAbilityGetter(caster, "getActionHand"));
+        if (actionHand == EquipmentSlot.HAND || actionHand == EquipmentSlot.OFF_HAND) {
+            ItemStack held = player.getInventory().getItem(actionHand);
+            if (isMmoItem(held)) return new AbilityDurabilitySource(held, actionHand);
         }
         return null;
+    }
+
+    private Object invokeAbilityGetter(Object source, String methodName) {
+        if (source == null) return null;
+        try {
+            return source.getClass().getMethod(methodName).invoke(source);
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return null;
+        }
     }
 
     private ItemStack extractAbilitySourceItem(Event event) {
@@ -3513,7 +3599,10 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         try {
             Object durabilityItem;
-            if (mmoDurabilityConstructorItemStack != null) {
+            if (mmoDurabilityCustomFactory != null) {
+                durabilityItem = mmoDurabilityCustomFactory.invoke(null, player, slot, item);
+                if (durabilityItem == null) return true;
+            } else if (mmoDurabilityConstructorItemStack != null) {
                 durabilityItem = mmoDurabilityConstructorItemStack.newInstance(player, item);
             } else if (mmoDurabilityConstructorNbt != null) {
                 Object nbt = mmoNbtGetMethod.invoke(null, item);
@@ -3578,11 +3667,31 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
         if (!ensureMmoNbtReflection()) return false;
 
-        // MMOItems moderno: DurabilityItem(Player, ItemStack) con decreaseDurability() y toItem().
+        // API moderna: DurabilityItem es abstracta; se usa su fábrica pública
+        // con la mano real, necesaria también cuando el item termina de romperse.
+        try {
+            Class<?> durabilityClass = Class.forName("net.Indyuce.mmoitems.api.interaction.util.DurabilityItem");
+            Method factory = durabilityClass.getMethod("custom", Player.class, EquipmentSlot.class, ItemStack.class);
+            Method decrease = findMethodInHierarchy(durabilityClass, "onDurabilityDecrease", int.class);
+            Method toItem = findMethodInHierarchy(durabilityClass, "toItem");
+            if (decrease != null && toItem != null) {
+                mmoDurabilityCustomFactory = factory;
+                mmoDurabilityDecreaseMethod = decrease;
+                mmoDurabilityToItemMethod = toItem;
+                mmoDurabilityIsValidMethod = findMethodInHierarchy(durabilityClass, "isValid");
+                mmoDurabilityGetDurabilityMethod = findMethodInHierarchy(durabilityClass, "getDurability");
+                debug("Fábrica DurabilityItem.custom de MMOItems detectada.");
+                return true;
+            }
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+        }
+
+        // MMOItems anterior: DurabilityItem(Player, ItemStack).
         try {
             Class<?> durabilityClass = Class.forName("net.Indyuce.mmoitems.api.interaction.util.DurabilityItem");
             Constructor<?> constructor = durabilityClass.getConstructor(Player.class, ItemStack.class);
-            Method decrease = findMethodInHierarchy(durabilityClass, "decreaseDurability", int.class);
+            Method decrease = findMethodInHierarchy(durabilityClass, "onDurabilityDecrease", int.class);
+            if (decrease == null) decrease = findMethodInHierarchy(durabilityClass, "decreaseDurability", int.class);
             Method toItem = findMethodInHierarchy(durabilityClass, "toItem");
             Method isValid = findMethodInHierarchy(durabilityClass, "isValid");
             Method getDurability = findMethodInHierarchy(durabilityClass, "getDurability");
@@ -3603,10 +3712,11 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
         try {
             Class<?> customClass = Class.forName("net.Indyuce.mmoitems.api.interaction.util.CustomDurabilityItem");
             Constructor<?> constructor = customClass.getConstructor(Player.class, mmoNbtItemClass, EquipmentSlot.class);
-            Method decrease = findMethodInHierarchy(customClass, "decreaseDurability", int.class);
-            if (decrease == null) decrease = findMethodInHierarchy(customClass, "onDurabilityDecrease", int.class);
+            // Coste fijo por habilidad: no hace la tirada aleatoria de Unbreaking.
+            // CustomDurabilityDamage sigue pudiendo proteger el objeto.
+            Method decrease = findMethodInHierarchy(customClass, "onDurabilityDecrease", int.class);
+            if (decrease == null) decrease = findMethodInHierarchy(customClass, "decreaseDurability", int.class);
             Method toItem = findMethodInHierarchy(customClass, "toItem");
-            if (toItem == null) toItem = findMethodInHierarchy(customClass, "applyChanges");
             Method isValid = findMethodInHierarchy(customClass, "isValid");
             Method getDurability = findMethodInHierarchy(customClass, "getDurability");
 
@@ -5109,10 +5219,12 @@ public final class MDVToolsPlugin extends JavaPlugin implements Listener {
 
     private static final class AbilityDurabilitySourceHint {
         final EquipmentSlot slot;
+        final ItemStack item;
         final long createdAtMs;
 
-        AbilityDurabilitySourceHint(EquipmentSlot slot, long createdAtMs) {
+        AbilityDurabilitySourceHint(EquipmentSlot slot, ItemStack item, long createdAtMs) {
             this.slot = slot;
+            this.item = item;
             this.createdAtMs = createdAtMs;
         }
     }

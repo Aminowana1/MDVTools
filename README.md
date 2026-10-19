@@ -1,4 +1,16 @@
-# MDVTools 1.0.28
+# MDVTools 1.0.29
+
+## MDVTools 1.0.29 - Durabilidad de habilidades y doble shift en Bedrock
+
+- Captura `PlayerClickEvent` de MythicLib antes del casteo para gastar los usos del objeto correcto desde el primer clic derecho.
+- Usa la fábrica pública de durabilidad de MMOItems actual y mantiene compatibilidad con constructores anteriores. El coste fijo respeta el evento de daño y la protección de objetos irrompibles.
+- Comprueba la durabilidad agotada antes de castear y observa los bloqueos cancelables antes de cobrar. Evita callbacks duplicados.
+- Bedrock: agacharse, soltar y agacharse otra vez en 450 ms equivale a F para el amuleto configurado en offhand; Java no activa este atajo.
+- Configuración del atajo y selectores `AMULETO:*`: `amulets.yml`. Se necesitan las APIs de [Floodgate](https://geysermc.org/wiki/floodgate/api/) o [Geyser local](https://geysermc.org/wiki/geyser/getting-started-with-the-api/).
+- Instrucciones de actualización y comprobación en `MDVTools_1.0.29_update_notes.txt`; ejemplos separados para `config.yml` y `amulets.yml`.
+
+Compilar y ejecutar las pruebas: Java 21 y Maven, `mvn clean package`.
+Las dependencias del servidor son `provided`; las de pruebas no se empaquetan en el JAR.
 
 ## MDVTools 1.0.28 - Rendimiento acumulativo de drops
 

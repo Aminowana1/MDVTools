@@ -1,10 +1,10 @@
 name: MDVTools
-version: 1.0.28
+version: 1.0.29
 main: com.mdvcraft.tools.MDVToolsPlugin
 api-version: '1.21'
 author: MDVCRAFT
 description: Herramientas de profesión para MDVCRAFT.
-softdepend: [MDVHeadOres, MMOItems, MythicMobs, MythicLib, MMOCore, PlaceholderAPI, Essentials]
+softdepend: [MDVHeadOres, MMOItems, MythicMobs, MythicLib, MMOCore, PlaceholderAPI, Essentials, floodgate, Geyser-Spigot]
 commands:
   tpa:
     description: Solicita teletransportarte hacia otro jugador.

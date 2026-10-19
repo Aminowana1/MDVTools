@@ -15,7 +15,8 @@
 # la habilidad. MDVTools cancela después el movimiento vanilla
 # de objetos entre la mano principal y la secundaria.
 #
-# Es event-driven: solo se ejecuta cuando el jugador pulsa F.
+# En Bedrock también se puede activar con dos pulsaciones de agacharse.
+# Es event-driven; no revisa inventarios cada tick.
 # ==========================================================
 offhand-swap-cast:
   enabled: true
@@ -28,17 +29,26 @@ offhand-swap-cast:
   # offhand coincide con uno de los selectores de mmoitems.
   block-vanilla-swap-always: true
 
-  # Esta lista se usa únicamente cuando
+  # Solo Bedrock: equivale a F al pulsar agacharse, soltar y volver a pulsar.
+  # Java nunca castea por este gesto. Respeta cooldowns, requisitos y costes.
+  # Requiere Floodgate en este servidor con los datos reenviados por el proxy,
+  # o Geyser-Spigot local. No se detecta Bedrock por el nombre del jugador.
+  bedrock-double-sneak:
+    enabled: true
+    # Tiempo máximo entre ambas pulsaciones (1 a 2000 ms).
+    window-ms: 450
+
+  # Doble shift solo castea cuando el amuleto de offhand está en esta lista.
+  # Para F, esta lista limita el bloqueo del movimiento únicamente cuando
   # block-vanilla-swap-always: false.
-  # También puedes mantener aquí tus amuletos SWAP_ITEMS como
-  # catálogo organizado aunque el bloqueo global esté activo.
   #
   # Formatos admitidos:
   # - 'TIPO:ID' -> un MMOItem exacto
   # - 'TIPO:*'  -> todos los MMOItems de ese tipo
   # - '*:ID'    -> ese ID sin importar el tipo
   # - '*:*'     -> cualquier MMOItem
-  mmoitems: []
+  mmoitems:
+    - 'AMULETO:*'
   # Ejemplo:
   # mmoitems:
   #   - 'AMULETO:TALISMAN_FUNEBRE'

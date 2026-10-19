@@ -468,6 +468,8 @@ weapon-swap-lock:
 # Solo afecta items con max-durability custom de MMOItems.
 ability-durability-cost:
   enabled: true
+  # Coste fijo de habilidad; en la API moderna no se sortea con Unbreaking.
+  # Se respetan custom-durability-protection y el evento de daño de MMOItems.
   cost: 1
   only-custom-durability: true
 

@@ -1,0 +1,31 @@
+MDVTools 1.0.21
+================
+
+CAMBIOS
+-------
+1. Nuevo archivo separado: plugins/MDVTools/amulets.yml
+   - offhand-swap-cast
+   - ranged-extra-arrows
+   - patrones BURST, HORIZONTAL y VOLLEY
+
+2. Bloqueo global del intercambio de manos
+   - offhand-swap-cast.block-vanilla-swap-always: true
+   - La tecla F ya no mueve objetos nunca mientras el sistema esté activado.
+   - MMOItems/MythicLib sigue pudiendo ejecutar habilidades con mode: SWAP_ITEMS.
+
+3. Migración automática desde 1.0.20
+   - Si amulets.yml todavía no existe, MDVTools lo crea.
+   - Copia automáticamente los bloques offhand-swap-cast y ranged-extra-arrows
+     que encuentre en el config.yml antiguo.
+   - Después del primer inicio correcto, esos bloques viejos pueden borrarse
+     manualmente de config.yml; ya no se leen desde allí.
+
+4. Recarga
+   - /mdvtools reload recarga config.yml y amulets.yml.
+
+RENDIMIENTO
+-----------
+No se añadieron loops ni revisiones por tick.
+- SWAP_ITEMS: una comprobación únicamente al pulsar F.
+- Flechas adicionales: trabajo únicamente en EntityShootBowEvent y solo si hay
+  un patrón habilitado que coincide con el arma u offhand.

@@ -1,0 +1,8 @@
+# MDVTools 1.0.18 - agrega este bloque a tu config.yml actual.
+# Si no lo agregas, el código usa exactamente estos valores por defecto.
+
+custom-durability-protection:
+  enabled: true
+  detect:
+    item-meta-unbreakable: true
+    mmoitems-unbreakable-stat: true

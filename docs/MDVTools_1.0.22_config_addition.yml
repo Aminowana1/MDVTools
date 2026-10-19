@@ -1,0 +1,6 @@
+# MDVTools 1.0.22
+# Agregar este bloque al config.yml existente.
+# No borra ni reemplaza ninguna configuración anterior.
+
+player-head-durability-bar:
+  enabled: true

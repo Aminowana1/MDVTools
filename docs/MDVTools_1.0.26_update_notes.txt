@@ -1,0 +1,29 @@
+MDVTools 1.0.26 - Fishing Fight Timer FIX 2
+============================================================
+
+CAMBIOS
+- Corrige el estado duplicado/doble anzuelo al agotarse el tiempo total.
+- MDVTools ya no se limita a borrar el FishHook: localiza la sesión interna
+  FishingListener$FishingData de MMOCore y ejecuta su propio close().
+- Esto limpia el UUID interno de pesca de MMOCore, su BukkitRunnable, su
+  listener dinámico y el anzuelo en una sola operación, igual que MMOCore.
+- Mantiene hook.remove() únicamente como fallback de compatibilidad.
+- El mensaje de chat por timeout se reemplaza por un holograma TextDisplay
+  temporal en la posición donde estaba el anzuelo.
+- Holograma configurable: texto, duración, offset Y, sombra y see-through.
+- El sonido de escape se reproduce en la posición del anzuelo.
+- Config auto-merge no destructivo: no reemplaza valores existentes.
+
+CONFIG NUEVA
+fishing-fight-timer:
+  hologram:
+    enabled: true
+    text: "&c¡El pez escapó! &7No lograste recogerlo a tiempo."
+    duration-seconds: 2.0
+    y-offset: 0.85
+    shadowed: true
+    see-through: true
+
+NOTA DE MIGRACIÓN
+- El antiguo bloque fishing-fight-timer.messages puede quedarse en tu
+  config.yml; 1.0.26 ya no lo usa. No hace falta borrarlo.

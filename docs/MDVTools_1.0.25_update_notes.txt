@@ -1,0 +1,9 @@
+MDVTools 1.0.25 - Fishing Fight Timer FIX
+
+- Corrige compatibilidad con MMOCore FishingManager actual:
+  calculateDropTable(Player, FishHook).
+- Mantiene fallback para builds legacy calculateDropTable(Player).
+- El timer total inicia en PlayerFishEvent.State.BITE y NO se reinicia con tugs.
+- Al vencer, elimina el FishHook y la captura se pierde.
+- Añade debug opcional de pesca.
+- config.yml ahora se auto-completa con claves faltantes sin borrar valores existentes.

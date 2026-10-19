@@ -1,0 +1,29 @@
+MDVTools 1.0.20
+================
+
+NUEVO: ranged-extra-arrows
+- Patrones de flechas adicionales para arcos y ballestas MMOItems.
+- El efecto puede provenir del arma disparada (source: WEAPON), de un amuleto/offhand
+  (source: OFFHAND) o de cualquiera de ambos (source: EITHER).
+- Modos disponibles:
+  * BURST: flechas consecutivas detrás del disparo original.
+  * HORIZONTAL: abanico horizontal simétrico con la original al centro.
+  * VOLLEY: grupo de flechas dentro de un cono configurable.
+- Copia la entidad de la flecha original mediante EntitySnapshot para conservar el tipo
+  de flecha, daño, velocidad, crítico, perforación, pociones y arma de origen.
+- Configura multiplicadores independientes de daño y velocidad.
+- Soporta probabilidad, cooldown, fuerza mínima y filtros BOW/CROSSBOW.
+- Selectores MMOItems: TIPO:ID, TIPO:*, *:ID y *:*.
+
+RENDIMIENTO Y SEGURIDAD
+- Totalmente event-driven: no revisa jugadores ni inventarios por tick.
+- Límite global de flechas extra por disparo.
+- Ventana anti-duplicado para Crossbow Multishot.
+- Las flechas extra no se pueden recoger por defecto.
+- Despawn corto configurable para evitar acumulación de flechas clavadas.
+- Solo se usa el primer patrón coincidente, evitando combinaciones multiplicativas.
+
+MIGRACIÓN
+- Copia MDVTools_1.0.20_config_addition.yml dentro de config.yml.
+- Sustituye los TYPE:ID de ejemplo por los IDs reales de tus MMOItems.
+- Ejecuta /mdvtools reload o reinicia el servidor.

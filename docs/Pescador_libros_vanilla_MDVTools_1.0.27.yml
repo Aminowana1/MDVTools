@@ -1,0 +1,62 @@
+# ==========================================================
+# BLOQUE PARA REEMPLAZAR LOS LIBROS MMOITEMS EN Pescador.yml
+# Requiere MDVTools 1.0.27+
+# ==========================================================
+# Mantiene exactamente los pesos del balance anterior:
+# libros = peso 200 / total 10000 = 2% (~1 cada 50 pescas)
+
+# PROTECCIÓN I-IV - Total 35
+- 'enchantedbook{enchant=protection;level=1;tugs=10-14;experience=3-5} 1 1 15'
+- 'enchantedbook{enchant=protection;level=2;tugs=12-16;experience=3-5} 1 1 10'
+- 'enchantedbook{enchant=protection;level=3;tugs=14-18;experience=4-6} 1 1 6'
+- 'enchantedbook{enchant=protection;level=4;tugs=16-20;experience=5-7} 1 1 4'
+
+# FORTUNA I-III - Total 23
+- 'enchantedbook{enchant=fortune;level=1;tugs=10-14;experience=3-5} 1 1 12'
+- 'enchantedbook{enchant=fortune;level=2;tugs=13-17;experience=4-6} 1 1 7'
+- 'enchantedbook{enchant=fortune;level=3;tugs=16-20;experience=5-7} 1 1 4'
+
+# FILO I-V - Total 32
+- 'enchantedbook{enchant=sharpness;level=1;tugs=10-14;experience=3-5} 1 1 14'
+- 'enchantedbook{enchant=sharpness;level=2;tugs=12-16;experience=3-5} 1 1 9'
+- 'enchantedbook{enchant=sharpness;level=3;tugs=14-18;experience=4-6} 1 1 5'
+- 'enchantedbook{enchant=sharpness;level=4;tugs=16-20;experience=5-7} 1 1 3'
+- 'enchantedbook{enchant=sharpness;level=5;tugs=18-22;experience=6-8} 1 1 1'
+
+# EFICIENCIA I-V - Total 32
+- 'enchantedbook{enchant=efficiency;level=1;tugs=10-14;experience=3-5} 1 1 14'
+- 'enchantedbook{enchant=efficiency;level=2;tugs=12-16;experience=3-5} 1 1 9'
+- 'enchantedbook{enchant=efficiency;level=3;tugs=14-18;experience=4-6} 1 1 5'
+- 'enchantedbook{enchant=efficiency;level=4;tugs=16-20;experience=5-7} 1 1 3'
+- 'enchantedbook{enchant=efficiency;level=5;tugs=18-22;experience=6-8} 1 1 1'
+
+# IRROMPIBILIDAD I-III - Total 20
+- 'enchantedbook{enchant=unbreaking;level=1;tugs=10-14;experience=3-5} 1 1 11'
+- 'enchantedbook{enchant=unbreaking;level=2;tugs=13-17;experience=4-6} 1 1 6'
+- 'enchantedbook{enchant=unbreaking;level=3;tugs=16-20;experience=5-7} 1 1 3'
+
+# REPARACIÓN - Total 4
+- 'enchantedbook{enchant=mending;level=1;tugs=18-22;experience=6-8} 1 1 4'
+
+# CAÍDA DE PLUMA I-IV - Total 22
+- 'enchantedbook{enchant=feather_falling;level=1;tugs=10-14;experience=3-5} 1 1 10'
+- 'enchantedbook{enchant=feather_falling;level=2;tugs=12-16;experience=3-5} 1 1 6'
+- 'enchantedbook{enchant=feather_falling;level=3;tugs=14-18;experience=4-6} 1 1 4'
+- 'enchantedbook{enchant=feather_falling;level=4;tugs=16-20;experience=5-7} 1 1 2'
+
+# PODER I-V - Total 32
+- 'enchantedbook{enchant=power;level=1;tugs=10-14;experience=3-5} 1 1 14'
+- 'enchantedbook{enchant=power;level=2;tugs=12-16;experience=3-5} 1 1 9'
+- 'enchantedbook{enchant=power;level=3;tugs=14-18;experience=4-6} 1 1 5'
+- 'enchantedbook{enchant=power;level=4;tugs=16-20;experience=5-7} 1 1 3'
+- 'enchantedbook{enchant=power;level=5;tugs=18-22;experience=6-8} 1 1 1'
+
+# ==========================================================
+# EJEMPLOS DE MOB COMO CAPTURA
+# ==========================================================
+# Vanilla: aparece en la posición actual del pescador.
+# El amount (1 / 1-2 / etc.) es la cantidad de mobs.
+- 'fishmob{type=DROWNED;tugs=18-22;experience=5-7} 1 1 20'
+
+# MythicMobs opcional:
+- 'fishmob{mythic=TU_MOB_MYTHIC;level=1;tugs=22-28;experience=8-12} 1 1 5'

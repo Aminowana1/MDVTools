@@ -1,16 +1,23 @@
-# MDVTools 1.0.29
+# MDVTools 1.1.1
 
-## MDVTools 1.0.29 - Durabilidad de habilidades y doble shift en Bedrock
+## MDVTools 1.1.1 - Merge de la versión del servidor
 
-- Captura `PlayerClickEvent` de MythicLib antes del casteo para gastar los usos del objeto correcto desde el primer clic derecho.
-- Usa la fábrica pública de durabilidad de MMOItems actual y mantiene compatibilidad con constructores anteriores. El coste fijo respeta el evento de daño y la protección de objetos irrompibles.
-- Comprueba la durabilidad agotada antes de castear y observa los bloqueos cancelables antes de cobrar. Evita callbacks duplicados.
-- Bedrock: agacharse, soltar y agacharse otra vez en 450 ms equivale a F para el amuleto configurado en offhand; Java no activa este atajo.
-- Configuración del atajo y selectores `AMULETO:*`: `amulets.yml`. Se necesitan las APIs de [Floodgate](https://geysermc.org/wiki/floodgate/api/) o [Geyser local](https://geysermc.org/wiki/geyser/getting-started-with-the-api/).
-- Instrucciones de actualización y comprobación en `MDVTools_1.0.29_update_notes.txt`; ejemplos separados para `config.yml` y `amulets.yml`.
+- Conserva la separación de TPA a MDVSocial y la organización de ejemplos y notas en `docs/`.
+- Corrige el consumo de durabilidad custom del objeto que origina la habilidad, incluido el primer clic derecho en la mano principal.
+- Mantiene el coste fijo, la protección de objetos irrompibles y la comprobación de casteos cancelados para evitar cobros incorrectos o duplicados.
+- Bedrock: agacharse, soltar y agacharse otra vez en 450 ms equivale a F para el amuleto configurado en offhand; Java conserva F.
+- El atajo y los selectores `AMULETO:*` se configuran en `amulets.yml`. Se necesita Floodgate en el servidor con los datos del proxy reenviados, o Geyser-Spigot local.
+- Instrucciones de actualización: `docs/MDVTools_1.1.1_update_notes.txt`. Los ejemplos de configuración de la corrección están en `docs/MDVTools_1.0.29_amulets.yml` y `docs/MDVTools_1.0.29_config_addition.yml`.
 
 Compilar y ejecutar las pruebas: Java 21 y Maven, `mvn clean package`.
 Las dependencias del servidor son `provided`; las de pruebas no se empaquetan en el JAR.
+GitHub Actions compila y guarda el JAR al subir cambios a `main` o `master`, y permite lanzarlo manualmente.
+
+## MDVTools 1.0.29 - El TPA pasa a MDVSocial
+
+- MDVTools ya no registra `/tpa`, `/tpaccept`, `/tpdeny`, `/aceptartp`, `/rechazartp` ni `/tpacancel`.
+- El sistema completo vive ahora en MDVSocial (ver `docs/TPA.md` de MDVSocial). El permiso pasa a ser `mdvsocial.tpa`.
+- MDVSocial importa sola la sección `tpa` de este `config.yml` la primera vez que arranca; después se puede borrar de aquí.
 
 ## MDVTools 1.0.28 - Rendimiento acumulativo de drops
 
@@ -174,7 +181,7 @@ Requieren PlaceholderAPI:
 
 Cambia `mining` por `farming` o `woodcutting`. También funcionan `minero`, `agricultor` y `lenador`. Añade `_formatted` al final para recibir un valor como `+12.5%`.
 
-## MDVTools 1.0.15 - Gracia inicial de movimiento en TPA
+## MDVTools 1.0.15 - Gracia inicial de movimiento en TPA (ahora en MDVSocial)
 
 - El TPA mantiene una espera total configurable de 4 segundos.
 - Durante el primer segundo después de aceptar, el solicitante todavía puede moverse sin cancelar.

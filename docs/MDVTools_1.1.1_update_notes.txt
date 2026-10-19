@@ -1,0 +1,56 @@
+MDVTools 1.1.1 - Integración de las dos versiones
+
+BASE CONSERVADA
+- Se conserva la separación de TPA que hizo la versión del servidor: MDVTools
+  no registra /tpa ni sus alias. Esa función corresponde a MDVSocial.
+- Se conserva la carpeta docs/, el .gitignore y el workflow de GitHub Actions.
+- No se cambian las mecánicas de pesca, profesiones, minería, tala, agricultura
+  ni los custom drops de la versión de tu amigo.
+
+CAMBIOS INTEGRADOS
+- Corrección del consumo de durabilidad custom al activar habilidades MMOItems
+  con clic derecho desde la mano principal.
+- Resolución de la mano y del objeto que originan el casteo, evitando cobrar
+  al objeto que lo reemplazó o a la otra mano.
+- API moderna de durabilidad de MMOItems, coste fijo, comprobación de objeto
+  agotado, respeto de casteos cancelados y deduplicación.
+- Doble pulsación de agacharse solo para Bedrock, equivalente a SWAP_ITEMS/F
+  del amuleto configurado en offhand. No intercambia objetos.
+- Detección mediante Floodgate o Geyser-Spigot local. En Java el doble shift
+  no activa este atajo.
+- Versiones de pom.xml y plugin.yml unificadas en 1.1.1.
+
+CONFIGURACIÓN E INSTALACIÓN
+1. Apaga el servidor y sustituye el JAR de MDVTools por MDVTools-1.1.1.jar.
+   Deja una sola versión del plugin en la carpeta plugins y reinicia.
+2. Conserva tus config.yml, custom-drops.yml y amulets.yml existentes. Así se
+   mantienen tus listas de bloques, probabilidades y ajustes del servidor.
+3. El coste ya existente ability-durability-cost.cost: 1 continúa siendo válido.
+4. En plugins/MDVTools/amulets.yml, la sección offhand-swap-cast debe incluir
+   el selector AMULETO:* o tus amuletos concretos. Las opciones del atajo son:
+
+   bedrock-double-sneak:
+     enabled: true
+     window-ms: 450
+
+   Añádelas dentro de offhand-swap-cast, conservando el resto de la sección.
+   Consulta también docs/MDVTools_1.0.29_amulets.yml como ejemplo completo.
+5. Tras cambiar configuración: /mdvtools reload.
+
+IMPORTANTE
+- custom-durability-protection.enabled: true sigue protegiendo los objetos
+  marcados unbreakable: true; esos objetos no gastarán durabilidad custom.
+- El TPA permanece en MDVSocial, tal como en la versión de tu amigo.
+- Los valores de configuración no se sustituyen al actualizar el JAR.
+
+GITHUB
+Sube el contenido del proyecto a la raíz del repositorio, con pom.xml y .github
+en el mismo nivel. .github/workflows/build.yml compila con Java 21 al hacer push
+a main/master o al lanzarlo manualmente. El artefacto se llama MDVTools-jar.
+
+VALIDACIÓN
+Compilación limpia con Java 21 completada: 22 pruebas superadas, sin fallos,
+errores ni pruebas omitidas. Se verificaron el workflow incluido, las versiones
+de pom.xml/plugin.yml y la ausencia de clases de prueba en el JAR.
+La prueba con los plugins y objetos concretos del servidor sigue siendo
+necesaria después de instalarlo; no se ha ejecutado el workflow en GitHub.

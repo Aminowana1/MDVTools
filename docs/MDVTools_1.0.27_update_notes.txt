@@ -1,0 +1,31 @@
+MDVTools 1.0.27 - MMOCore fishing custom drops
+================================================
+
+NUEVO: enchantedbook
+- Registra un DropItem adicional mediante la API oficial MMOCore MMOLoader.
+- Sintaxis:
+  enchantedbook{enchant=protection;level=4;tugs=16-20;experience=5-7} 1 1 4
+- Produce un ENCHANTED_BOOK vanilla real usando StoredEnchant.
+- No produce un MMOItem y no añade datos custom al libro.
+- Soporta IDs vanilla y aliases españoles comunes.
+
+NUEVO: fishmob
+- Sintaxis vanilla:
+  fishmob{type=DROWNED;tugs=12-16;experience=4-6} 1 1 20
+- Al completar la captura, el mob aparece en la ubicación actual del pescador.
+- El amount estándar de MMOCore controla cuántos mobs aparecen.
+- El marcador interno se oculta y elimina; el jugador no recibe ningún ítem falso.
+- Se mantiene el flujo exitoso de MMOCore para EXP de profesión, EXP vanilla,
+  estadísticas y feedback de captura.
+
+OPCIONAL: MythicMobs
+- Sintaxis:
+  fishmob{mythic=TU_MOB_MYTHIC;level=1;tugs=20-26;experience=8-12} 1 1 5
+- Integración por reflexión; MythicMobs sigue siendo dependencia opcional.
+
+ARQUITECTURA
+- Nuevo package com.mdvcraft.tools.fishing.mmocore.
+- El MMOLoader se registra en MDVTools#onLoad, antes de MMOCore#onEnable.
+- MMOCore y MythicLib se añadieron como dependencias Maven provided.
+- MDVTools conserva softdepend y puede arrancar sin MMOCore mediante carga
+  reflection-safe del módulo opcional.

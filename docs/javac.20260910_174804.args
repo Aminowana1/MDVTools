@@ -1,0 +1,17 @@
+--release
+21
+-proc:none
+-Xmaxerrs
+5000
+-d
+/tmp/mdvsyntax
+src/main/java/com/mdvcraft/tools/MDVToolsPlugin.java
+src/main/java/com/mdvcraft/tools/fishing/FishingFightTimerListener.java
+src/main/java/com/mdvcraft/tools/fishing/MMOCoreFishingBridge.java
+src/main/java/com/mdvcraft/tools/fishing/mmocore/EnchantedBookDropItem.java
+src/main/java/com/mdvcraft/tools/fishing/mmocore/FishMobDropItem.java
+src/main/java/com/mdvcraft/tools/fishing/mmocore/MMOCoreFishingDropExtension.java
+src/main/java/com/mdvcraft/tools/fishing/mmocore/MDVToolsMMOLoader.java
+src/main/java/com/mdvcraft/tools/fishing/mmocore/MythicMobReflectionSpawner.java
+src/main/java/com/mdvcraft/tools/fishing/FishingFightTimerSettings.java
+src/main/java/com/mdvcraft/tools/MDVToolsPlaceholderExpansion.java

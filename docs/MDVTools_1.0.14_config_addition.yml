@@ -1,0 +1,50 @@
+# Añade este bloque completo al final de plugins/MDVTools/config.yml.
+# No borres tu carpeta ni reemplaces tu config actual.
+identification:
+  enabled: true
+
+  # false = un objeto sin tier no puede identificarse con estos pergaminos.
+  allow-items-without-tier: false
+
+  # Orden de menor a mayor rareza usado para maximum-tier.
+  tier-order:
+    - COMUN
+    - ESPECIAL
+    - RARO
+    - EPICO
+    - LEGENDARIO
+
+  scrolls:
+    PERGAMINO_IDENTIFICACION_COMUN:
+      type: CONSUMABLE
+      chance: 65.0
+      maximum-tier: COMUN
+      consume-on-success: true
+      consume-on-failure: true
+      consume-on-denied: false
+
+  messages:
+    success: "&aHas identificado correctamente el objeto."
+    failure: "&cEl pergamino se deshizo sin revelar el objeto."
+    tier-too-high: "&cEste pergamino no tiene poder suficiente para identificar un objeto de tier &f{tier}&c."
+    invalid-target: "&cSolo puedes usar este pergamino sobre un objeto no identificado."
+    stacked-target: "&cSepara los objetos apilados antes de identificarlos."
+    no-tier: "&cEste objeto no tiene un tier reconocible."
+    internal-error: "&cNo se pudo revelar el objeto. Revisa la consola."
+
+  sounds:
+    success:
+      enabled: true
+      value: "entity.player.levelup"
+      volume: 0.8
+      pitch: 1.6
+    failure:
+      enabled: true
+      value: "block.fire.extinguish"
+      volume: 0.7
+      pitch: 0.8
+    denied:
+      enabled: true
+      value: "block.note_block.bass"
+      volume: 0.6
+      pitch: 0.7

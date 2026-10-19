@@ -1,0 +1,106 @@
+# Ejemplo listo para MDVCRAFT con categorías 1.0.17.
+# Puedes reemplazar el contenido de custom-drops.yml por este archivo
+# o copiar únicamente category y las entradas nuevas.
+
+enabled: true
+
+default-fallback-command: "mi give %type% %id% %player% %amount%"
+
+drops:
+  brote-dorado-trigo:
+    enabled: true
+    category: FARMING
+    block: WHEAT
+    mature-only: true
+    chance: 0.06
+    amount: 1
+    mmoitems-type: MISCELLANEOUS
+    mmoitems-id: BROTEDORADO
+    drop-naturally: true
+    worlds: []
+    require-tool-lore: false
+    required-tool-lore-contains: []
+
+  raiz-encantada-t2:
+    enabled: true
+    category: FARMING
+    blocks:
+      - CARROTS
+      - POTATOES
+      - BEETROOTS
+      - NETHER_WART
+    mature-only: true
+    chance: 0.07
+    amount: 1
+    mmoitems-type: MISCELLANEOUS
+    mmoitems-id: RAIZENCANTADA
+    drop-naturally: true
+    worlds:
+      - world
+    require-tool-lore: true
+    required-tool-lore-contains:
+      - 'Cosecha T2'
+
+  flor-del-alba-t2:
+    enabled: true
+    category: FARMING
+    blocks:
+      - WHEAT
+      - CARROTS
+      - POTATOES
+      - BEETROOTS
+    mature-only: true
+    chance: 0.012
+    amount: 1
+    mmoitems-type: MISCELLANEOUS
+    mmoitems-id: FLORALBA
+    drop-naturally: true
+    worlds:
+      - world
+    require-tool-lore: true
+    required-tool-lore-contains:
+      - 'Cosecha T2'
+
+  rama-arcana-t2:
+    enabled: true
+    category: WOODCUTTING
+    blocks:
+      - OAK_LOG
+      - SPRUCE_LOG
+      - BIRCH_LOG
+      - JUNGLE_LOG
+      - ACACIA_LOG
+      - DARK_OAK_LOG
+      - MANGROVE_LOG
+      - CHERRY_LOG
+      - PALE_OAK_LOG
+    mature-only: false
+    chance: 0.008
+    amount: 1
+    mmoitems-type: MISCELLANEOUS
+    mmoitems-id: RAMAARCANA
+    drop-naturally: true
+    worlds:
+      - world
+    require-tool-lore: true
+    required-tool-lore-contains:
+      - 'Tala T2'
+
+# Ejemplo futuro de minería:
+#  fragmento-minero-t2:
+#    enabled: true
+#    category: MINING
+#    blocks:
+#      - DEEPSLATE
+#      - TUFF
+#    mature-only: false
+#    chance: 0.05
+#    amount: 1
+#    mmoitems-type: MISCELLANEOUS
+#    mmoitems-id: ID_DEL_ITEM
+#    drop-naturally: true
+#    worlds:
+#      - world
+#    require-tool-lore: true
+#    required-tool-lore-contains:
+#      - 'Minería T2'

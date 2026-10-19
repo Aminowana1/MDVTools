@@ -1,0 +1,24 @@
+MDVTools 1.0.15
+=================
+
+Mejora de comodidad para el calentamiento de TPA.
+
+- Espera total recomendada: 4 segundos.
+- El primer segundo tras aceptar permite movimiento sin cancelar.
+- Los 3 segundos restantes sí cancelan al moverse.
+- Daño y ataques continúan cancelando desde el inicio para evitar exploits.
+- Nueva configuración: tpa.movement-grace-seconds
+- Nuevos placeholders del mensaje warmup-started:
+  %grace_seconds%
+  %movement_lock_seconds%
+  %seconds%
+
+Migración
+---------
+1. Reemplaza únicamente el JAR/source por la versión 1.0.15.
+2. Conserva la carpeta plugins/MDVTools.
+3. En el bloque tpa de tu config actual deja:
+     teleport-delay-seconds: 4
+     movement-grace-seconds: 1
+4. Opcionalmente actualiza tpa.messages.warmup-started con el texto del config nuevo.
+5. Reinicia el servidor o ejecuta /mdvtools reload.

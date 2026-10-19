@@ -1,0 +1,50 @@
+MDVTools 1.0.23
+================
+
+CAMBIOS
+-------
+1. PLAYER_HEAD: barra oculta al 100%.
+   - Si MMOITEMS_DURABILITY == MMOITEMS_MAX_DURABILITY, MDVTools elimina
+     minecraft:max_damage y minecraft:damage.
+   - Al perder el primer punto, la barra aparece automáticamente.
+
+2. PLAYER_HEAD: corregido doble desgaste.
+   - El componente visual MAX_DAMAGE hace que Minecraft pueda disparar
+     PlayerItemDamageEvent incluso sobre PLAYER_HEAD.
+   - MMOItems además posee su propio camino para materiales con maxDurability
+     vanilla 0 mediante EntityDamageEvent.
+   - MDVTools ahora cancela PlayerItemDamageEvent en prioridad LOWEST, antes del
+     listener HIGHEST de MMOItems. Resultado: un solo descuento custom.
+   - SOLO afecta PLAYER_HEAD con MMOITEMS_MAX_DURABILITY > 0.
+
+3. Habilidades de offhand ya no desgastan la mainhand por error.
+   - El coste manual de habilidad deja de asumir siempre getItemInMainHand().
+   - Se identifica la fuente por el propio evento cuando es posible.
+   - Como fallback, se usa una pista event-driven del input Bukkit durante 250 ms.
+   - PlayerInteractEvent respeta HAND/OFF_HAND.
+   - SWAP_ITEMS/F prioriza el MMOItem de offhand.
+   - ATTACK marca mainhand únicamente para habilidades de ataque.
+   - Si no existe una fuente fiable, NO se cobra durabilidad a ningún item.
+   - Al regenerar el item tras el cobro, se devuelve a la misma mano que lo casteó.
+
+4. Rendimiento.
+   - No hay loops por tick.
+   - No hay escaneos periódicos.
+   - Las pistas de mano son un HashMap por UUID y solo se escriben al interactuar.
+   - La ventana de 250 ms no usa scheduler: solo una comparación de timestamp.
+
+CONFIG
+------
+No hay claves nuevas obligatorias respecto a 1.0.22.
+Si ya existe:
+
+player-head-durability-bar:
+  enabled: true
+
+no agregues nada.
+
+COMPILACION
+-----------
+Java 21 / Paper 1.21.6
+mvn clean package
+Salida: target/MDVTools-1.0.23.jar

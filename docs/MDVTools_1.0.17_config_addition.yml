@@ -1,0 +1,22 @@
+# MDVTools 1.0.17 - agrega este bloque a tu config.yml actual.
+# No borres ni reemplaces el resto de tu configuración.
+
+custom-drops:
+  # Hace un sorteo de custom-drops.yml por cada bloque adicional realmente roto.
+  roll-on-extra-blocks:
+    mining: true
+    woodcutting: true
+
+  # Usa profesión + armadura + herramienta como bonus RELATIVO de chance.
+  relative-bonuses:
+    enabled: true
+    farming: true
+    mining: true
+    woodcutting: true
+
+# Además, añade category a cada drop dentro de custom-drops.yml:
+# category: FARMING
+# category: MINING
+# category: WOODCUTTING
+# category: NONE
+# category: AUTO

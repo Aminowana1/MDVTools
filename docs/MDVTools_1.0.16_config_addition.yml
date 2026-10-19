@@ -1,0 +1,38 @@
+# MDVTools 1.0.16 - fusiona estas claves con tu config.yml existente.
+# No reemplaces los bloques completos si ya contienen otras opciones.
+
+lore:
+  forma-pico: "Forma de Pico"
+
+mining:
+  max-extra-blocks: 32
+  mode: LINE
+  shapes:
+    max-width: 7
+    max-height: 7
+    max-depth: 5
+
+equipment-bonuses:
+  max-combined-bonus-percent: 100.0
+  main-hand-tools:
+    enabled: true
+    require-matching-tool-type: true
+
+profession-bonuses:
+  enabled: true
+  mmocore-plugin-name: "MMOCore"
+  cache-ms: 1000
+  count-starting-level: true
+  max-profession-bonus-percent: 100.0
+
+  mining:
+    profession-id: "mining"
+    bonus-per-level: 0.60
+
+  farming:
+    profession-id: "farming"
+    bonus-per-level: 0.75
+
+  woodcutting:
+    profession-id: "woodcutting"
+    bonus-per-level: 0.50

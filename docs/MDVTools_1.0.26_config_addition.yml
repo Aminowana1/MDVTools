@@ -1,0 +1,24 @@
+# MDVTools 1.0.26 - Fishing Fight Timer FIX 2
+# No borres tu config.yml. MDVTools agrega automáticamente estas claves
+# si faltan y conserva todos tus valores existentes.
+
+fishing-fight-timer:
+  enabled: true
+  max-fight-time-seconds: 3.0
+  only-mmocore-custom-fishing: true
+  mmocore-plugin-name: "MMOCore"
+  debug: false
+
+  hologram:
+    enabled: true
+    text: "&c¡El pez escapó! &7No lograste recogerlo a tiempo."
+    duration-seconds: 2.0
+    y-offset: 0.85
+    shadowed: true
+    see-through: true
+
+  sound:
+    enabled: true
+    value: "entity.fishing_bobber.retrieve"
+    volume: 0.8
+    pitch: 0.7

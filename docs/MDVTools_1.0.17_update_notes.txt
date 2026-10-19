@@ -1,0 +1,39 @@
+MDVTools 1.0.17
+================
+
+NUEVO
+-----
+1. Los bloques extra destruidos por Rotura Múltiple ahora realizan su propio sorteo de custom drops.
+2. Los troncos extra destruidos por Tala Múltiple ahora realizan su propio sorteo de custom drops.
+3. Cada entrada de custom-drops.yml puede clasificarse con:
+   - category: FARMING
+   - category: MINING
+   - category: WOODCUTTING
+   - category: NONE
+   - category: AUTO
+4. Los bonus de profesión, armadura y herramienta se aplican de forma RELATIVA a los custom drops de las tres categorías.
+5. El sistema absoluto de MDVHeadOres sigue funcionando por separado:
+   - Minerales Raros puede entregar +1 mineral custom.
+   - Nodos de arbol extra puede entregar +1 item del nodo.
+
+FÓRMULA
+-------
+chance final = chance base × (1 + bonus total / 100)
+
+Ejemplo:
+chance base 0.08% + bonus total 50% = 0.12% final.
+
+IMPORTANTE
+----------
+- Cada bloque extra roto hace un sorteo individual, no un único sorteo por uso de herramienta.
+- Un bloque protegido o que no se rompe no hace sorteo.
+- La protección continúa comprobándose antes de romper cada bloque extra.
+- Las configs viejas siguen funcionando: si no existe category, se usa AUTO.
+- Para troncos y minerales, usa mature-only: false.
+
+MIGRACIÓN
+---------
+1. Reemplaza el JAR por MDVTools 1.0.17.
+2. Agrega el bloque de MDVTools_1.0.17_config_addition.yml a tu config.yml.
+3. Añade category a las entradas de custom-drops.yml.
+4. Ejecuta /mdvtools reload.

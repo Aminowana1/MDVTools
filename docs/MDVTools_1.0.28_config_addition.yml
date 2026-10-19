@@ -1,0 +1,42 @@
+# Estas claves se añaden automáticamente al config.yml existente.
+yield-bonuses:
+  system-version: 2
+  enabled: true
+  max-extra-units-per-block: 128
+  mining-disable-with-silk-touch: true
+  vanilla:
+    mining:
+      enabled: true
+      require-matching-tool: true
+      resources:
+        COAL_ORE: COAL
+        DEEPSLATE_COAL_ORE: COAL
+        IRON_ORE: RAW_IRON
+        DEEPSLATE_IRON_ORE: RAW_IRON
+        COPPER_ORE: RAW_COPPER
+        DEEPSLATE_COPPER_ORE: RAW_COPPER
+        GOLD_ORE: RAW_GOLD
+        DEEPSLATE_GOLD_ORE: RAW_GOLD
+        REDSTONE_ORE: REDSTONE
+        DEEPSLATE_REDSTONE_ORE: REDSTONE
+        LAPIS_ORE: LAPIS_LAZULI
+        DEEPSLATE_LAPIS_ORE: LAPIS_LAZULI
+        DIAMOND_ORE: DIAMOND
+        DEEPSLATE_DIAMOND_ORE: DIAMOND
+        EMERALD_ORE: EMERALD
+        DEEPSLATE_EMERALD_ORE: EMERALD
+        NETHER_QUARTZ_ORE: QUARTZ
+        NETHER_GOLD_ORE: GOLD_NUGGET
+        ANCIENT_DEBRIS: ANCIENT_DEBRIS
+    woodcutting:
+      enabled: true
+      require-matching-tool: true
+    farming:
+      enabled: true
+      require-matching-tool: false
+      resources:
+        WHEAT: WHEAT
+        CARROTS: CARROT
+        POTATOES: POTATO
+        BEETROOTS: BEETROOT
+        NETHER_WART: NETHER_WART

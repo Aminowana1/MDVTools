@@ -1,0 +1,11 @@
+MDVTools 1.0.28 - Rendimiento acumulativo de drops
+
+- 100% = +1 extra garantizado.
+- 170% = +1 garantizado + 70% de otro.
+- 550% = +5 garantizados + 50% de otro.
+- Aplica a MDVHeadOres (minería y nodos), minería vanilla, troncos vanilla configurados y cultivos maduros.
+- Fortune funciona aparte; no multiplica los extras de MDVTools.
+- Silk Touch desactiva todos los bonus porcentuales de minería, pero conserva drops/chances base.
+- Custom drops raros mantienen multiplicador relativo.
+- Sin tracking de bloques colocados.
+- Sin loops por porcentaje; solo división/módulo y como máximo un roll aleatorio.
